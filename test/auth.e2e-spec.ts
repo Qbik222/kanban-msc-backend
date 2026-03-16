@@ -12,8 +12,6 @@ describe('Auth E2E', () => {
     process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/kanban_test';
 
   beforeAll(async () => {
-    process.env.MONGO_URI = testMongoUri;
-
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -27,12 +25,16 @@ describe('Auth E2E', () => {
       }),
     );
     await app.init();
+    console.log('testMongoUri', testMongoUri);
+    console.log('E2E mongoose DB:', mongoose.connection.db?.databaseName);
   });
 
   afterAll(async () => {
-    await mongoose.connection.dropDatabase().catch(() => undefined);
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.dropDatabase();
+      await mongoose.disconnect();
+    }
     await app.close();
-    await mongoose.disconnect();
   });
 
   beforeEach(async () => {
@@ -42,7 +44,7 @@ describe('Auth E2E', () => {
     }
   });
 
-  it('TC-01: should register a new user', async () => {
+  it('API-01: should register a new user', async () => {
     const payload = {
       email: 'tc01@example.com',
       password: 'password123',
@@ -59,9 +61,17 @@ describe('Auth E2E', () => {
     expect(res.body.user.email).toBe(payload.email.toLowerCase());
     expect(typeof res.body.accessToken).toBe('string');
     expect(res.body.accessToken.length).toBeGreaterThan(0);
+
+    // Verify password is hashed in DB
+    const createdUser = await mongoose.connection
+      .collection('users')
+      .findOne({ email: payload.email.toLowerCase() });
+
+    expect(createdUser).toBeTruthy();
+    expect(createdUser!.password).not.toBe(payload.password);
   });
 
-  it('TC-02: should login with valid credentials', async () => {
+  it('API-02: should login with valid credentials', async () => {
     const payload = {
       email: 'tc02@example.com',
       password: 'password123',
@@ -82,6 +92,17 @@ describe('Auth E2E', () => {
     expect(loginRes.body).toHaveProperty('user');
     expect(loginRes.body).toHaveProperty('accessToken');
     expect(loginRes.body.user.email).toBe(payload.email.toLowerCase());
+
+    const token = loginRes.body.accessToken as string;
+
+    const meRes = await request(app.getHttpServer())
+      .get('/users/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(meRes.body).toHaveProperty('email', payload.email.toLowerCase());
+    expect(meRes.body).toHaveProperty('id');
+    expect(meRes.body).toHaveProperty('name');
   });
 });
 

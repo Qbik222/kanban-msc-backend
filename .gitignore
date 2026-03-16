@@ -13,12 +13,15 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.sample
+
 
 # IDE / Editor
 .vscode
 .idea
 *.iml
 .cursor
+
 
 # OS
 Thumbs.db
