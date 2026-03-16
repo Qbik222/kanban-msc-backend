@@ -1,13 +1,15 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getConnectionToken } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import { AppModule } from '../src/app.module';
-import  request from 'supertest';
-import mongoose from 'mongoose';
+import request from 'supertest';
 
 jest.setTimeout(30000);
 
 describe('Auth E2E', () => {
   let app: INestApplication;
+  let dbConnection: Connection;
   const testMongoUri =
     process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/kanban_test';
 
@@ -25,22 +27,22 @@ describe('Auth E2E', () => {
       }),
     );
     await app.init();
+    dbConnection = app.get<Connection>(getConnectionToken());
     console.log('testMongoUri', testMongoUri);
-    console.log('E2E mongoose DB:', mongoose.connection.db?.databaseName);
+    console.log('E2E mongoose DB:', dbConnection.db?.databaseName);
   });
 
   afterAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.connection.dropDatabase();
-      await mongoose.disconnect();
+    if (dbConnection && dbConnection.readyState !== 0) {
+      await dbConnection.dropDatabase();
+      await dbConnection.close();
     }
     await app.close();
   });
 
   beforeEach(async () => {
-    const { connection } = mongoose;
-    if (connection.readyState === 1) {
-      await connection.collection('users').deleteMany({});
+    if (dbConnection && dbConnection.readyState === 1) {
+      await dbConnection.collection('users').deleteMany({});
     }
   });
 
@@ -63,7 +65,7 @@ describe('Auth E2E', () => {
     expect(res.body.accessToken.length).toBeGreaterThan(0);
 
     // Verify password is hashed in DB
-    const createdUser = await mongoose.connection
+    const createdUser = await dbConnection
       .collection('users')
       .findOne({ email: payload.email.toLowerCase() });
 
