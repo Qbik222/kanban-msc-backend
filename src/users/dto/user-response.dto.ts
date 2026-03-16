@@ -2,13 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UserResponseDto {
   @ApiProperty({ example: '123' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'user@example.com' })
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: 'User Name' })
-  name: string;
+  name!: string;
 
   @ApiPropertyOptional({ example: 'https://example.com/avatar.png' })
   avatarUrl?: string;
