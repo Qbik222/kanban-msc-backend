@@ -38,8 +38,30 @@ export class ColumnsService {
     return {
       id: this.mapId(card?._id ?? card?.id),
       title: card?.title ?? '',
+      description: card?.description ?? '',
       order: card?.order ?? 0,
       columnId: this.mapId(card?.columnId),
+      boardId: this.mapId(card?.boardId),
+      isDeleted: Boolean(card?.isDeleted),
+      assigneeId: card?.assigneeId ? this.mapId(card?.assigneeId) : undefined,
+      deadline: card?.deadline
+        ? {
+            startDate: card.deadline.startDate,
+            endDate: card.deadline.endDate,
+          }
+        : undefined,
+      projectIds: Array.isArray(card?.projectIds)
+        ? card.projectIds.map((id: any) => this.mapId(id))
+        : [],
+      priority: card?.priority ?? 'medium',
+      comments: Array.isArray(card?.comments)
+        ? card.comments.map((c: any) => ({
+            _id: this.mapId(c?._id ?? c?.id),
+            text: c?.text ?? '',
+            authorId: this.mapId(c?.authorId),
+            createdAt: c?.createdAt,
+          }))
+        : [],
       createdAt: card?.createdAt,
       updatedAt: card?.updatedAt,
     };

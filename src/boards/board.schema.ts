@@ -11,6 +11,10 @@ export class Board extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   ownerId!: Types.ObjectId;
 
+  // ids-only tags/projects attached to this board
+  @Prop({ type: [Types.ObjectId], default: [] })
+  projectIds!: Types.ObjectId[];
+
   @Prop({ default: false })
   isDeleted!: boolean;
 

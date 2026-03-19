@@ -1,4 +1,4 @@
-﻿import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BoardResponseDto {
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a001' })
@@ -9,6 +9,9 @@ export class BoardResponseDto {
 
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1ffff' })
   ownerId!: string;
+
+  @ApiProperty({ example: ['65f0b3c3f2b7f6a1e9b1a010', '65f0b3c3f2b7f6a1e9b1a011'], isArray: true })
+  projectIds!: string[];
 
   @ApiProperty({ example: false })
   isDeleted!: boolean;

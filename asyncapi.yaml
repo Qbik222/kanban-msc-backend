@@ -48,6 +48,34 @@ channels:
       operationId: onColumnsUpdated
       message:
         $ref: '#/components/messages/ColumnsUpdatedMessage'
+  cardCreated:
+    description: Server event emitted after successful card creation (POST /cards).
+    subscribe:
+      summary: Card created event
+      operationId: onCardCreated
+      message:
+        $ref: '#/components/messages/CardCreatedMessage'
+  cardUpdated:
+    description: Server event emitted after successful card update (PATCH /cards/:id).
+    subscribe:
+      summary: Card updated event
+      operationId: onCardUpdated
+      message:
+        $ref: '#/components/messages/CardUpdatedMessage'
+  cardMoved:
+    description: Server event emitted after successful card move/reorder (PATCH /cards/:id/move).
+    subscribe:
+      summary: Card moved event (full snapshot)
+      operationId: onCardMoved
+      message:
+        $ref: '#/components/messages/CardMovedMessage'
+  commentAdded:
+    description: Server event emitted after successful card comment creation (POST /cards/:id/comments).
+    subscribe:
+      summary: Comment added event
+      operationId: onCommentAdded
+      message:
+        $ref: '#/components/messages/CommentAddedMessage'
 components:
   messages:
     JoinBoardMessage:
@@ -75,6 +103,26 @@ components:
       title: Columns updated
       payload:
         $ref: '#/components/schemas/ColumnsUpdatedPayload'
+    CardCreatedMessage:
+      name: card_created
+      title: Card created
+      payload:
+        $ref: '#/components/schemas/CardResponsePayload'
+    CardUpdatedMessage:
+      name: card_updated
+      title: Card updated
+      payload:
+        $ref: '#/components/schemas/CardResponsePayload'
+    CardMovedMessage:
+      name: card_moved
+      title: Card moved
+      payload:
+        $ref: '#/components/schemas/BoardDetailsResponsePayload'
+    CommentAddedMessage:
+      name: comment_added
+      title: Comment added
+      payload:
+        $ref: '#/components/schemas/CardResponsePayload'
   schemas:
     BoardResponsePayload:
       type: object
@@ -83,6 +131,7 @@ components:
         - id
         - title
         - ownerId
+        - projectIds
         - isDeleted
       properties:
         id:
@@ -94,6 +143,11 @@ components:
         ownerId:
           type: string
           description: Owner user ID.
+        projectIds:
+          type: array
+          items:
+            type: string
+          description: ids-only tags/projects attached to this board.
         isDeleted:
           type: boolean
           description: For board:deleted this is true.
@@ -157,14 +211,91 @@ components:
         updatedAt:
           type: string
           format: date-time
+    BoardDetailsResponsePayload:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/BoardResponsePayload'
+        - type: object
+          required:
+            - columns
+          properties:
+            columns:
+              type: array
+              items:
+                $ref: '#/components/schemas/ColumnResponsePayload'
+    DeadlinePayload:
+      type: object
+      required: []
+      properties:
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+    CardCommentPayload:
+      type: object
+      required:
+        - _id
+        - text
+        - authorId
+      properties:
+        _id:
+          type: string
+        text:
+          type: string
+        authorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     CardResponsePayload:
       type: object
+      description: Full card data.
+      required:
+        - id
+        - title
+        - description
+        - order
+        - columnId
+        - boardId
+        - isDeleted
+        - projectIds
+        - priority
+        - comments
       properties:
         id:
           type: string
         title:
           type: string
+        description:
+          type: string
         order:
           type: number
         columnId:
           type: string
+        boardId:
+          type: string
+        isDeleted:
+          type: boolean
+        assigneeId:
+          type: string
+        deadline:
+          $ref: '#/components/schemas/DeadlinePayload'
+        projectIds:
+          type: array
+          items:
+            type: string
+        priority:
+          type: string
+          enum: [low, medium, high]
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardCommentPayload'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

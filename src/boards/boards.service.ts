@@ -36,8 +36,30 @@ export class BoardsService {
     return {
       id: this.mapId(card?._id ?? card?.id),
       title: card?.title ?? '',
+      description: card?.description ?? '',
       order: card?.order ?? 0,
       columnId: this.mapId(card?.columnId),
+      boardId: this.mapId(card?.boardId),
+      isDeleted: Boolean(card?.isDeleted),
+      assigneeId: card?.assigneeId ? this.mapId(card.assigneeId) : undefined,
+      deadline: card?.deadline
+        ? {
+            startDate: card.deadline.startDate,
+            endDate: card.deadline.endDate,
+          }
+        : undefined,
+      projectIds: Array.isArray(card?.projectIds)
+        ? card.projectIds.map((id: any) => this.mapId(id))
+        : [],
+      priority: card?.priority ?? 'medium',
+      comments: Array.isArray(card?.comments)
+        ? card.comments.map((c: any) => ({
+            _id: this.mapId(c?._id ?? c?.id),
+            text: c?.text ?? '',
+            authorId: this.mapId(c?.authorId),
+            createdAt: c?.createdAt,
+          }))
+        : [],
       createdAt: card?.createdAt,
       updatedAt: card?.updatedAt,
     };
@@ -62,6 +84,9 @@ export class BoardsService {
       id: this.mapId(board?._id ?? board?.id),
       title: board?.title ?? '',
       ownerId: this.mapId(board?.ownerId),
+      projectIds: Array.isArray(board?.projectIds)
+        ? board.projectIds.map((id: any) => this.mapId(id))
+        : [],
       isDeleted: Boolean(board?.isDeleted),
       createdAt: board?.createdAt,
       updatedAt: board?.updatedAt,
@@ -80,6 +105,7 @@ export class BoardsService {
     const board = new this.boardModel({
       title: dto.title,
       ownerId: new Types.ObjectId(ownerId),
+      projectIds: (dto.projectIds ?? []).map((id) => new Types.ObjectId(id)),
     });
     const savedBoard = await board.save();
     return this.toBoardResponse(savedBoard);

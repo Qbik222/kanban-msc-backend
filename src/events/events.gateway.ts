@@ -10,6 +10,8 @@ import { Server } from 'socket.io';
 import type { Socket } from 'socket.io';
 import { BoardResponseDto } from '../boards/dto/board-response.dto';
 import { ColumnResponseDto } from '../boards/dto/column-response.dto';
+import { CardResponseDto } from '../boards/dto/card-response.dto';
+import { BoardDetailsResponseDto } from '../boards/dto/board-details-response.dto';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -40,5 +42,21 @@ export class EventsGateway {
 
   emitColumnsUpdated(boardId: string, columns: ColumnResponseDto[]): void {
     this.server.to(`board:${boardId}`).emit('columns:updated', { boardId, columns });
+  }
+
+  emitCardCreated(boardId: string, card: CardResponseDto): void {
+    this.server.to(`board:${boardId}`).emit('card:created', card);
+  }
+
+  emitCardMoved(boardId: string, boardSnapshot: BoardDetailsResponseDto): void {
+    this.server.to(`board:${boardId}`).emit('card:moved', boardSnapshot);
+  }
+
+  emitCardUpdated(boardId: string, card: CardResponseDto): void {
+    this.server.to(`board:${boardId}`).emit('card:updated', card);
+  }
+
+  emitCommentAdded(boardId: string, card: CardResponseDto): void {
+    this.server.to(`board:${boardId}`).emit('comment:added', card);
   }
 }
