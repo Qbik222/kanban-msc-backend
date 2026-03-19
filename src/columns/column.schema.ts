@@ -1,4 +1,4 @@
-﻿import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 @Schema({
@@ -13,6 +13,9 @@ export class Column extends Document {
 
   @Prop({ default: 0 })
   order!: number;
+
+  @Prop({ default: false })
+  isDeleted!: boolean;
 
   createdAt?: Date;
 

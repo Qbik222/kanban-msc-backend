@@ -50,6 +50,7 @@ export class BoardsService {
       title: column?.title ?? '',
       order: column?.order ?? 0,
       boardId: this.mapId(column?.boardId),
+      isDeleted: Boolean(column?.isDeleted),
       cards: cards.map((card: any) => this.toCardResponse(card)),
       createdAt: column?.createdAt,
       updatedAt: column?.updatedAt,
@@ -104,9 +105,11 @@ export class BoardsService {
       })
       .populate({
         path: 'columns',
+        match: { isDeleted: false },
         options: { sort: { order: 1 } },
         populate: {
           path: 'cards',
+          match: { isDeleted: false },
           options: { sort: { order: 1 } },
         },
       })

@@ -41,6 +41,13 @@ channels:
       operationId: onBoardDeleted
       message:
         $ref: '#/components/messages/BoardDeletedMessage'
+  columnsUpdated:
+    description: Server event emitted after column create, update, reorder, or delete. Payload contains only active columns (isDeleted false); after delete the removed column is not in the array.
+    subscribe:
+      summary: Columns updated event
+      operationId: onColumnsUpdated
+      message:
+        $ref: '#/components/messages/ColumnsUpdatedMessage'
 components:
   messages:
     JoinBoardMessage:
@@ -63,6 +70,11 @@ components:
       title: Board deleted
       payload:
         $ref: '#/components/schemas/BoardResponsePayload'
+    ColumnsUpdatedMessage:
+      name: columns:updated
+      title: Columns updated
+      payload:
+        $ref: '#/components/schemas/ColumnsUpdatedPayload'
   schemas:
     BoardResponsePayload:
       type: object
@@ -102,3 +114,57 @@ components:
           description: MongoDB ObjectId of the board.
           examples:
             - 65f0b3c3f2b7f6a1e9b1a001
+    ColumnsUpdatedPayload:
+      type: object
+      required:
+        - boardId
+        - columns
+      properties:
+        boardId:
+          type: string
+          description: Board ID.
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnResponsePayload'
+    ColumnResponsePayload:
+      type: object
+      description: Active column (isDeleted false). After delete, removed column is not in the array.
+      required:
+        - id
+        - title
+        - order
+        - boardId
+        - isDeleted
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        order:
+          type: number
+        boardId:
+          type: string
+        isDeleted:
+          type: boolean
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardResponsePayload'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CardResponsePayload:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        order:
+          type: number
+        columnId:
+          type: string

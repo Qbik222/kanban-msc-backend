@@ -9,6 +9,7 @@ import {
 import { Server } from 'socket.io';
 import type { Socket } from 'socket.io';
 import { BoardResponseDto } from '../boards/dto/board-response.dto';
+import { ColumnResponseDto } from '../boards/dto/column-response.dto';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -35,5 +36,9 @@ export class EventsGateway {
 
   emitBoardDeleted(board: BoardResponseDto): void {
     this.server.to(`board:${board.id}`).emit('board:deleted', board);
+  }
+
+  emitColumnsUpdated(boardId: string, columns: ColumnResponseDto[]): void {
+    this.server.to(`board:${boardId}`).emit('columns:updated', { boardId, columns });
   }
 }

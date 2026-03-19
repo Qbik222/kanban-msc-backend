@@ -1,4 +1,4 @@
-﻿import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CardResponseDto } from './card-response.dto';
 
 export class ColumnResponseDto {
@@ -13,6 +13,9 @@ export class ColumnResponseDto {
 
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a001' })
   boardId!: string;
+
+  @ApiProperty({ example: false })
+  isDeleted!: boolean;
 
   @ApiProperty({ type: [CardResponseDto] })
   cards!: CardResponseDto[];
