@@ -51,6 +51,22 @@ describe('Boards E2E', () => {
   let dbConnection: Connection;
   let socket: Socket;
 
+  async function createBoardAndJoin(token: string, title: string): Promise<string> {
+    const boardRes = await request(app.getHttpServer())
+      .post('/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title })
+      .expect(201);
+
+    const boardId = boardRes.body.id as string;
+
+    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
+    socket.emit('joinBoard', { boardId });
+    await joinedPromise;
+
+    return boardId;
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -104,25 +120,9 @@ describe('Boards E2E', () => {
     await app.close();
   });
 
-  it('board:updated + board:deleted (soft delete => GET 404)', async () => {
-    const token = await registerAndLogin(
-      app,
-      'tc_boards_01@example.com',
-      'password123',
-      'TC Boards 01',
-    );
-
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Board for ws updates' })
-      .expect(201);
-
-    const boardId = boardRes.body.id as string;
-
-    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
-    socket.emit('joinBoard', { boardId });
-    await joinedPromise;
+  it('API-09: PATCH /boards/:id -> ws board:updated + GET /boards/:id updated', async () => {
+    const token = await registerAndLogin(app, 'tc_boards_01@example.com', 'password123', 'TC Boards 01');
+    const boardId = await createBoardAndJoin(token, 'Board for ws updates');
 
     const patchUpdatedPromise = waitForSocketEvent<any>(socket, 'board:updated');
     await request(app.getHttpServer())
@@ -140,6 +140,11 @@ describe('Boards E2E', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(boardAfterPatch.body.title).toBe('Board title updated');
+  });
+
+  it('API-10: DELETE /boards/:id -> ws board:deleted + GET /boards/:id 404 after soft delete', async () => {
+    const token = await registerAndLogin(app, 'tc_boards_02@example.com', 'password123', 'TC Boards 02');
+    const boardId = await createBoardAndJoin(token, 'Board for ws delete');
 
     const deleteUpdatedPromise = waitForSocketEvent<any>(socket, 'board:deleted');
     await request(app.getHttpServer())

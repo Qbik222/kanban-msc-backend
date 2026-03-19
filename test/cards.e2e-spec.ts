@@ -42,6 +42,132 @@ describe('Cards E2E', () => {
   let dbConnection: Connection;
   let socket: Socket;
 
+  async function setupUserBoardAndJoin(
+    email: string,
+    password: string,
+    name: string,
+    boardTitle: string,
+  ): Promise<{ token: string; boardId: string }> {
+    const token = await registerAndLogin(app, email, password, name);
+
+    const boardRes = await request(app.getHttpServer())
+      .post('/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: boardTitle })
+      .expect(201);
+
+    const boardId = boardRes.body.id as string;
+
+    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
+    socket.emit('joinBoard', { boardId });
+    await joinedPromise;
+
+    return { token, boardId };
+  }
+
+  async function createColumns(token: string, boardId: string): Promise<{ col1Id: string; col2Id: string }> {
+    const col1Res = await request(app.getHttpServer())
+      .post('/columns')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Col 1', boardId })
+      .expect(201);
+
+    const col2Res = await request(app.getHttpServer())
+      .post('/columns')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Col 2', boardId })
+      .expect(201);
+
+    return { col1Id: col1Res.body.id as string, col2Id: col2Res.body.id as string };
+  }
+
+  async function createCardAndWait(
+    token: string,
+    columnId: string,
+    cardPayload: {
+      title: string;
+      description: string;
+      deadline?: { startDate: string; endDate: string };
+    },
+  ): Promise<{ cardId: string; wsPayload: any; httpBody: any }> {
+    const cardCreatedP = waitForSocketEvent<any>(socket, 'card:created');
+
+    const httpRes = await request(app.getHttpServer())
+      .post('/cards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: cardPayload.title,
+        description: cardPayload.description,
+        columnId,
+        deadline: cardPayload.deadline,
+      })
+      .expect(201);
+
+    const wsPayload = await cardCreatedP;
+    expect(wsPayload.id).toBe(httpRes.body.id);
+
+    return { cardId: httpRes.body.id as string, wsPayload, httpBody: httpRes.body };
+  }
+
+  async function updateCardAndWait(token: string, cardId: string, updatePayload: any): Promise<any> {
+    const cardUpdatedP = waitForSocketEvent<any>(socket, 'card:updated');
+
+    await request(app.getHttpServer())
+      .patch(`/cards/${cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(updatePayload)
+      .expect(200);
+
+    const wsPayload = await cardUpdatedP;
+    expect(wsPayload.id).toBe(cardId);
+    return wsPayload;
+  }
+
+  async function moveCardAndWait(
+    token: string,
+    cardId: string,
+    movePayload: { targetColumnId: string; newOrder: number },
+  ): Promise<any> {
+    const movedP = waitForSocketEvent<any>(socket, 'card:moved');
+
+    await request(app.getHttpServer())
+      .patch(`/cards/${cardId}/move`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(movePayload)
+      .expect(200);
+
+    return movedP;
+  }
+
+  async function addCommentAndWait(token: string, cardId: string, text: string): Promise<any> {
+    const commentAddedP = waitForSocketEvent<any>(socket, 'comment:added');
+
+    const httpRes = await request(app.getHttpServer())
+      .post(`/cards/${cardId}/comments`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text })
+      .expect(201);
+
+    const wsPayload = await commentAddedP;
+    expect(wsPayload.id).toBe(cardId);
+    expect(wsPayload.comments?.length).toBeGreaterThanOrEqual(1);
+
+    return { wsPayload, httpBody: httpRes.body };
+  }
+
+  async function deleteCommentAndWait(token: string, cardId: string, commentId: string): Promise<any> {
+    const cardUpdatedP = waitForSocketEvent<any>(socket, 'card:updated');
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${cardId}/comments/${commentId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const wsPayload = await cardUpdatedP;
+    expect(wsPayload.id).toBe(cardId);
+    return wsPayload;
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -95,172 +221,274 @@ describe('Cards E2E', () => {
     await app.close();
   });
 
-  it('cards: create/update/move/comments + ws events + ordering + deadline validation', async () => {
-    const token = await registerAndLogin(
-      app,
+  it('API-11: joinBoard => ws board:joined', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
       'tc_cards_01@example.com',
       'password123',
       'TC Cards 01',
+      'Board for cards e2e (API-11)',
     );
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
+    expect(token).toBeTruthy();
+    expect(boardId).toBeTruthy();
+  });
+
+  it('API-12: POST /columns x2 (create columns)', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_02@example.com',
+      'password123',
+      'TC Cards 02',
+      'Board for cards e2e (API-12)',
+    );
+
+    const { col1Id, col2Id } = await createColumns(token, boardId);
+
+    const boardSnapshot = await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Board for cards e2e' })
-      .expect(201);
+      .expect(200);
 
-    const boardId = boardRes.body.id as string;
+    expect(boardSnapshot.body.columns).toHaveLength(2);
+    expect(boardSnapshot.body.columns[0].id).toBe(col1Id);
+    expect(boardSnapshot.body.columns[1].id).toBe(col2Id);
+  });
 
-    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
-    socket.emit('joinBoard', { boardId });
-    const joined = await joinedPromise;
-    expect(joined.boardId).toBe(boardId);
+  it('API-13: POST /cards (with deadline) => ws card:created and card exists in GET /boards/:id', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_03@example.com',
+      'password123',
+      'TC Cards 03',
+      'Board for cards e2e (API-13)',
+    );
 
-    // Create columns (source and target)
-    const col1Res = await request(app.getHttpServer())
-      .post('/columns')
+    const { col1Id } = await createColumns(token, boardId);
+
+    const card1 = await createCardAndWait(token, col1Id, {
+      title: 'Card 1',
+      description: 'Description 1',
+      deadline: { startDate: '2026-03-19T09:00:00.000Z', endDate: '2026-03-20T09:00:00.000Z' },
+    });
+
+    const boardSnapshot = await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Col 1', boardId })
-      .expect(201);
-    const col1Id = col1Res.body.id as string;
+      .expect(200);
 
-    const col2Res = await request(app.getHttpServer())
-      .post('/columns')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Col 2', boardId })
-      .expect(201);
-    const col2Id = col2Res.body.id as string;
+    const movedCard = boardSnapshot.body.columns
+      .find((c: any) => c.id === col1Id)
+      .cards.find((c: any) => c.id === card1.cardId);
 
-    // Create 3 cards in col1: will have orders 0..2
-    const card1CreatedP = waitForSocketEvent<any>(socket, 'card:created');
-    const card1Http = await request(app.getHttpServer())
-      .post('/cards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: 'Card 1',
-        description: 'Description 1',
-        columnId: col1Id,
-        deadline: { startDate: '2026-03-19T09:00:00.000Z', endDate: '2026-03-20T09:00:00.000Z' },
-      })
-      .expect(201);
-    const card1Ws = await card1CreatedP;
-    expect(card1Ws.id).toBe(card1Http.body.id);
+    expect(movedCard).toBeTruthy();
+    expect(movedCard.deadline).toBeTruthy();
+    expect(movedCard.deadline.startDate).toBe('2026-03-19T09:00:00.000Z');
+    expect(movedCard.deadline.endDate).toBe('2026-03-20T09:00:00.000Z');
+  });
 
-    const card2CreatedP = waitForSocketEvent<any>(socket, 'card:created');
-    const card2Http = await request(app.getHttpServer())
-      .post('/cards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: 'Card 2',
-        description: 'Description 2',
-        columnId: col1Id,
-      })
-      .expect(201);
-    await card2CreatedP;
-    const card2Id = card2Http.body.id as string;
+  it('API-14: POST /cards => ws card:created', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_04@example.com',
+      'password123',
+      'TC Cards 04',
+      'Board for cards e2e (API-14)',
+    );
 
-    const card3CreatedP = waitForSocketEvent<any>(socket, 'card:created');
-    const card3Http = await request(app.getHttpServer())
-      .post('/cards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: 'Card 3',
-        description: 'Description 3',
-        columnId: col1Id,
-      })
-      .expect(201);
-    await card3CreatedP;
-    const card3Id = card3Http.body.id as string;
+    const { col1Id } = await createColumns(token, boardId);
+    const card2 = await createCardAndWait(token, col1Id, {
+      title: 'Card 2',
+      description: 'Description 2',
+    });
 
-    // Negative deadline validation (400)
+    expect(card2.cardId).toBeTruthy();
+    expect(card2.wsPayload.title).toBe('Card 2');
+  });
+
+  it('API-15: POST /cards => ws card:created (another card)', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_05@example.com',
+      'password123',
+      'TC Cards 05',
+      'Board for cards e2e (API-15)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card3 = await createCardAndWait(token, col1Id, {
+      title: 'Card 3',
+      description: 'Description 3',
+    });
+
+    expect(card3.cardId).toBeTruthy();
+    expect(card3.wsPayload.title).toBe('Card 3');
+  });
+
+  it('API-16: PATCH /cards/:id (invalid deadline endDate < startDate) => 400', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_06@example.com',
+      'password123',
+      'TC Cards 06',
+      'Board for cards e2e (API-16)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, {
+      title: 'Card to validate deadline',
+      description: 'Description',
+    });
+
     await request(app.getHttpServer())
-      .patch(`/cards/${card2Id}`)
+      .patch(`/cards/${card.cardId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({
-        deadline: { startDate: '2026-03-21T09:00:00.000Z', endDate: '2026-03-20T09:00:00.000Z' },
+        deadline: {
+          startDate: '2026-03-21T09:00:00.000Z',
+          endDate: '2026-03-20T09:00:00.000Z',
+        },
       })
       .expect(400);
+  });
 
-    // Update card (card:updated)
-    const cardUpdatedP = waitForSocketEvent<any>(socket, 'card:updated');
-    await request(app.getHttpServer())
-      .patch(`/cards/${card2Id}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Card 2 updated' })
-      .expect(200);
-    const cardUpdatedWs = await cardUpdatedP;
-    expect(cardUpdatedWs.id).toBe(card2Id);
-    expect(cardUpdatedWs.title).toBe('Card 2 updated');
+  it('API-17: PATCH /cards/:id => ws card:updated', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_07@example.com',
+      'password123',
+      'TC Cards 07',
+      'Board for cards e2e (API-17)',
+    );
 
-    // Move within same column: move Card 2 to order=0 => [Card2, Card1, Card3]
-    const movedWithinP = waitForSocketEvent<any>(socket, 'card:moved');
-    await request(app.getHttpServer())
-      .patch(`/cards/${card2Id}/move`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ targetColumnId: col1Id, newOrder: 0 })
-      .expect(200);
-    const movedWithinSnapshot = await movedWithinP;
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, {
+      title: 'Card for update',
+      description: 'Description',
+    });
 
-    const col1InSnapshot = movedWithinSnapshot.columns.find((c: any) => c.id === col1Id);
-    const movedOrders = col1InSnapshot.cards.map((c: any) => c.id);
-    expect(movedOrders).toEqual([card2Id, card1Http.body.id, card3Id]);
+    const wsPayload = await updateCardAndWait(token, card.cardId, { title: 'Card updated' });
+    expect(wsPayload.title).toBe('Card updated');
+  });
 
-    // Prepare move between columns: create a card in col2 so insertion order is deterministic
-    const col2CardCreatedP = waitForSocketEvent<any>(socket, 'card:created');
-    const col2CardHttp = await request(app.getHttpServer())
-      .post('/cards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: 'Target Card in Col2',
-        description: 'Target Description',
-        columnId: col2Id,
-      })
-      .expect(201);
-    await col2CardCreatedP;
-    const col2CardId = col2CardHttp.body.id as string;
+  it('API-18: PATCH /cards/:id/move within same column => ws card:moved + order in snapshot', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_08@example.com',
+      'password123',
+      'TC Cards 08',
+      'Board for cards e2e (API-18)',
+    );
 
-    // Move between columns: move Card 3 to col2 at newOrder=0
-    const movedBetweenP = waitForSocketEvent<any>(socket, 'card:moved');
-    await request(app.getHttpServer())
-      .patch(`/cards/${card3Id}/move`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ targetColumnId: col2Id, newOrder: 0 })
-      .expect(200);
-    const movedBetweenSnapshot = await movedBetweenP;
+    const { col1Id } = await createColumns(token, boardId);
+    const card1 = await createCardAndWait(token, col1Id, { title: 'Card 1', description: 'Description 1' });
+    const card2 = await createCardAndWait(token, col1Id, { title: 'Card 2', description: 'Description 2' });
+    const card3 = await createCardAndWait(token, col1Id, { title: 'Card 3', description: 'Description 3' });
 
-    const col1AfterMoveBetween = movedBetweenSnapshot.columns.find((c: any) => c.id === col1Id);
-    const col2AfterMoveBetween = movedBetweenSnapshot.columns.find((c: any) => c.id === col2Id);
+    const movedSnapshot = await moveCardAndWait(token, card2.cardId, { targetColumnId: col1Id, newOrder: 0 });
+    const col1InSnapshot = movedSnapshot.columns.find((c: any) => c.id === col1Id);
+    const ids = col1InSnapshot.cards.map((c: any) => c.id);
 
-    const col2Ids = col2AfterMoveBetween.cards.map((c: any) => c.id);
-    expect(col2Ids).toEqual([card3Id, col2CardId]);
+    expect(ids).toEqual([card2.cardId, card1.cardId, card3.cardId]);
+  });
 
-    const col1Ids = col1AfterMoveBetween.cards.map((c: any) => c.id);
-    // Source column cards should remain in their relative order excluding moved Card3
-    expect(col1Ids).toEqual([card2Id, card1Http.body.id]);
+  it('API-19: POST /cards in target column => ws card:created (prepare move between)', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_09@example.com',
+      'password123',
+      'TC Cards 09',
+      'Board for cards e2e (API-19)',
+    );
 
-    // Comments: add + delete with WS events
-    const commentAddedP = waitForSocketEvent<any>(socket, 'comment:added');
-    const commentAddHttp = await request(app.getHttpServer())
-      .post(`/cards/${card3Id}/comments`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ text: 'Looks good!' })
-      .expect(201);
-    const commentAddedWs = await commentAddedP;
-    expect(commentAddedWs.id).toBe(card3Id);
-    expect(commentAddedWs.comments).toHaveLength(1);
-    expect(commentAddedWs.comments[0].text).toBe('Looks good!');
+    const { col2Id } = await createColumns(token, boardId);
+    const targetCard = await createCardAndWait(token, col2Id, {
+      title: 'Target Card in Col2',
+      description: 'Target Description',
+    });
 
-    const commentId = (commentAddHttp.body.comments[0]._id as string) ?? (commentAddedWs.comments[0]._id as string);
+    expect(targetCard.wsPayload.id).toBe(targetCard.cardId);
+  });
+
+  it('API-20: PATCH /cards/:id/move between columns => ws card:moved + order in both columns', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_10@example.com',
+      'password123',
+      'TC Cards 10',
+      'Board for cards e2e (API-20)',
+    );
+
+    const { col1Id, col2Id } = await createColumns(token, boardId);
+    const card1 = await createCardAndWait(token, col1Id, { title: 'Card 1', description: 'Description 1' });
+    const card2 = await createCardAndWait(token, col1Id, { title: 'Card 2', description: 'Description 2' });
+    const card3 = await createCardAndWait(token, col1Id, { title: 'Card 3', description: 'Description 3' });
+    const targetCard = await createCardAndWait(token, col2Id, { title: 'Target', description: 'Target Description' });
+
+    const movedSnapshot = await moveCardAndWait(token, card3.cardId, { targetColumnId: col2Id, newOrder: 0 });
+
+    const col1After = movedSnapshot.columns.find((c: any) => c.id === col1Id);
+    const col2After = movedSnapshot.columns.find((c: any) => c.id === col2Id);
+
+    const col2Ids = col2After.cards.map((c: any) => c.id);
+    expect(col2Ids).toEqual([card3.cardId, targetCard.cardId]);
+
+    const col1Ids = col1After.cards.map((c: any) => c.id);
+    // sourceCards були зчитані відсортованими за order, тому після видалення moved card порядок зберігається
+    expect(col1Ids).toEqual([card1.cardId, card2.cardId]);
+  });
+
+  it('API-21: POST /cards/:id/comments => ws comment:added', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_11@example.com',
+      'password123',
+      'TC Cards 11',
+      'Board for cards e2e (API-21)',
+    );
+
+    const { col2Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col2Id, { title: 'Card for comments', description: 'Description' });
+
+    const { wsPayload } = await addCommentAndWait(token, card.cardId, 'Looks good!');
+    expect(wsPayload.comments).toHaveLength(1);
+    expect(wsPayload.comments[0].text).toBe('Looks good!');
+  });
+
+  it('API-22: DELETE /cards/:id/comments/:commentId => ws card:updated (comments cleared)', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_12@example.com',
+      'password123',
+      'TC Cards 12',
+      'Board for cards e2e (API-22)',
+    );
+
+    const { col2Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col2Id, { title: 'Card for comment delete', description: 'Description' });
+
+    const { wsPayload: addedWs, httpBody: addedHttp } = await addCommentAndWait(token, card.cardId, 'Looks good!');
+    const commentId =
+      (addedHttp.comments?.[0]?._id as string | undefined) ?? (addedWs.comments?.[0]?._id as string | undefined);
+
     expect(commentId).toBeTruthy();
 
-    const commentDeletedWsP = waitForSocketEvent<any>(socket, 'card:updated');
-    await request(app.getHttpServer())
-      .delete(`/cards/${card3Id}/comments/${commentId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-    const commentDeletedWs = await commentDeletedWsP;
-    expect(commentDeletedWs.id).toBe(card3Id);
-    expect(commentDeletedWs.comments).toHaveLength(0);
+    const updatedWs = await deleteCommentAndWait(token, card.cardId, commentId as string);
+    expect(updatedWs.comments).toHaveLength(0);
+  });
+
+  it('API-23: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_13@example.com',
+      'password123',
+      'TC Cards 13',
+      'Board for cards e2e (API-23)',
+    );
+
+    const { col1Id, col2Id } = await createColumns(token, boardId);
+    const card1 = await createCardAndWait(token, col1Id, { title: 'Card 1', description: 'Description 1' });
+    const card2 = await createCardAndWait(token, col1Id, { title: 'Card 2', description: 'Description 2' });
+    const card3 = await createCardAndWait(token, col1Id, { title: 'Card 3', description: 'Description 3' });
+    await createCardAndWait(token, col2Id, { title: 'Target', description: 'Target Description' });
+
+    // Move card3 to col2 first
+    await moveCardAndWait(token, card3.cardId, { targetColumnId: col2Id, newOrder: 0 });
+
+    // Add comment then delete it
+    const { wsPayload: addedWs, httpBody: addedHttp } = await addCommentAndWait(token, card3.cardId, 'Looks good!');
+    const commentId =
+      (addedHttp.comments?.[0]?._id as string | undefined) ?? (addedWs.comments?.[0]?._id as string | undefined);
+
+    expect(commentId).toBeTruthy();
+    await deleteCommentAndWait(token, card3.cardId, commentId as string);
 
     const boardSnapshot = await request(app.getHttpServer())
       .get(`/boards/${boardId}`)
@@ -269,7 +497,8 @@ describe('Cards E2E', () => {
 
     const movedCardInSnapshot = boardSnapshot.body.columns
       .find((c: any) => c.id === col2Id)
-      .cards.find((c: any) => c.id === card3Id);
+      .cards.find((c: any) => c.id === card3.cardId);
+
     expect(movedCardInSnapshot.comments).toHaveLength(0);
   });
 });

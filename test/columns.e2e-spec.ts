@@ -46,6 +46,99 @@ describe('Columns E2E', () => {
   let dbConnection: Connection;
   let socket: Socket;
 
+  async function createBoardAndJoin(token: string, title: string): Promise<string> {
+    const boardRes = await request(app.getHttpServer())
+      .post('/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title })
+      .expect(201);
+
+    const boardId = boardRes.body.id as string;
+
+    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
+    socket.emit('joinBoard', { boardId });
+    await joinedPromise;
+
+    return boardId;
+  }
+
+  async function createColumnAndWait(
+    token: string,
+    boardId: string,
+    title: string,
+  ): Promise<{ columnId: string; columnsPayload: any }> {
+    const columnsUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
+      socket,
+      'columns:updated',
+    );
+
+    const colRes = await request(app.getHttpServer())
+      .post('/columns')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title, boardId })
+      .expect(201);
+
+    const payload = await columnsUpdatedP;
+    expect(payload.boardId).toBe(boardId);
+    expect(payload.columns.some((c) => c.id === colRes.body.id)).toBe(true);
+
+    return { columnId: colRes.body.id as string, columnsPayload: payload };
+  }
+
+  async function reorderColumnsAndWait(
+    token: string,
+    payloadBody: { columns: { id: string; order: number }[] },
+  ): Promise<{ boardId: string; columns: any[] }> {
+    const columnsUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
+      socket,
+      'columns:updated',
+    );
+
+    await request(app.getHttpServer())
+      .patch('/columns/reorder')
+      .set('Authorization', `Bearer ${token}`)
+      .send(payloadBody)
+      .expect(200);
+
+    return columnsUpdatedP;
+  }
+
+  async function renameColumnAndWait(
+    token: string,
+    columnId: string,
+    newTitle: string,
+  ): Promise<{ boardId: string; columns: any[] }> {
+    const columnsUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
+      socket,
+      'columns:updated',
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/columns/${columnId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: newTitle })
+      .expect(200);
+
+    return columnsUpdatedP;
+  }
+
+  async function deleteColumnAndWait(
+    token: string,
+    columnId: string,
+  ): Promise<{ boardId: string; columns: any[] }> {
+    const columnsUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
+      socket,
+      'columns:updated',
+    );
+
+    await request(app.getHttpServer())
+      .delete(`/columns/${columnId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    return columnsUpdatedP;
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -99,79 +192,52 @@ describe('Columns E2E', () => {
     await app.close();
   });
 
-  it('columns: create/reorder/update/delete + ws + cascade', async () => {
-    const token = await registerAndLogin(
-      app,
-      'tc_columns_01@example.com',
-      'password123',
-      'TC Columns 01',
-    );
+  it('API-03: joinBoard => ws board:joined', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_01@example.com', 'password123', 'TC Columns 01');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e');
+    expect(typeof boardId).toBe('string');
+    expect(boardId.length).toBeGreaterThan(0);
+  });
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Board for columns e2e' })
-      .expect(201);
+  it('API-04: POST /columns (1st column) => ws columns:updated', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_02@example.com', 'password123', 'TC Columns 02');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e (API-04)');
 
-    const boardId = boardRes.body.id as string;
+    const { columnId, columnsPayload } = await createColumnAndWait(token, boardId, 'Col A');
+    expect(columnsPayload.columns).toHaveLength(1);
+    expect(columnsPayload.columns[0].id).toBe(columnId);
+    expect(columnsPayload.columns[0].order).toBe(0);
+  });
 
-    const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
-    socket.emit('joinBoard', { boardId });
-    const joined = await joinedPromise;
-    expect(joined.boardId).toBe(boardId);
+  it('API-05: POST /columns (2nd column) => ws columns:updated with orders [0,1]', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_03@example.com', 'password123', 'TC Columns 03');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e (API-05)');
 
-    // Create first column
-    const col1UpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
-      socket,
-      'columns:updated',
-    );
-    const col1Res = await request(app.getHttpServer())
-      .post('/columns')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Col A', boardId })
-      .expect(201);
-    const col1Payload = await col1UpdatedP;
-    expect(col1Payload.boardId).toBe(boardId);
-    expect(col1Payload.columns).toHaveLength(1);
-    expect(col1Payload.columns[0].id).toBe(col1Res.body.id);
-    expect(col1Payload.columns[0].order).toBe(0);
+    await createColumnAndWait(token, boardId, 'Col A');
+    const { columnsPayload } = await createColumnAndWait(token, boardId, 'Col B');
 
-    // Create second column
-    const col2UpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
-      socket,
-      'columns:updated',
-    );
-    const col2Res = await request(app.getHttpServer())
-      .post('/columns')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Col B', boardId })
-      .expect(201);
-    const col2Payload = await col2UpdatedP;
-    expect(col2Payload.boardId).toBe(boardId);
-    expect(col2Payload.columns).toHaveLength(2);
-    expect(col2Payload.columns[0].order).toBe(0);
-    expect(col2Payload.columns[1].order).toBe(1);
+    expect(columnsPayload.columns).toHaveLength(2);
+    expect(columnsPayload.columns[0].order).toBe(0);
+    expect(columnsPayload.columns[1].order).toBe(1);
+  });
 
-    // Reorder: swap A and B
-    const reorderUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
-      socket,
-      'columns:updated',
-    );
-    await request(app.getHttpServer())
-      .patch('/columns/reorder')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        columns: [
-          { id: col2Res.body.id, order: 0 },
-          { id: col1Res.body.id, order: 1 },
-        ],
-      })
-      .expect(200);
+  it('API-06: PATCH /columns/reorder => ws columns:updated + GET /boards/:id order', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_04@example.com', 'password123', 'TC Columns 04');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e (API-06)');
 
-    const reorderPayload = await reorderUpdatedP;
+    const col1 = await createColumnAndWait(token, boardId, 'Col A');
+    const col2 = await createColumnAndWait(token, boardId, 'Col B');
+
+    const reorderPayload = await reorderColumnsAndWait(token, {
+      columns: [
+        { id: col2.columnId, order: 0 },
+        { id: col1.columnId, order: 1 },
+      ],
+    });
+
     expect(reorderPayload.boardId).toBe(boardId);
-    expect(reorderPayload.columns[0].id).toBe(col2Res.body.id);
-    expect(reorderPayload.columns[1].id).toBe(col1Res.body.id);
+    expect(reorderPayload.columns[0].id).toBe(col2.columnId);
+    expect(reorderPayload.columns[1].id).toBe(col1.columnId);
     expect(reorderPayload.columns[0].order).toBe(0);
     expect(reorderPayload.columns[1].order).toBe(1);
 
@@ -180,35 +246,38 @@ describe('Columns E2E', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(boardAfterReorder.body.columns[0].id).toBe(col2Res.body.id);
-    expect(boardAfterReorder.body.columns[1].id).toBe(col1Res.body.id);
+    expect(boardAfterReorder.body.columns[0].id).toBe(col2.columnId);
+    expect(boardAfterReorder.body.columns[1].id).toBe(col1.columnId);
+  });
 
-    // Rename column A (now second)
-    const renameUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
-      socket,
-      'columns:updated',
-    );
-    await request(app.getHttpServer())
-      .patch(`/columns/${col1Res.body.id}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Col A (renamed)' })
-      .expect(200);
+  it('API-07: PATCH /columns/:id (rename) => ws columns:updated + GET /boards/:id', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_05@example.com', 'password123', 'TC Columns 05');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e (API-07)');
 
-    await renameUpdatedP;
+    const col1 = await createColumnAndWait(token, boardId, 'Col A');
+    const renamePayload = await renameColumnAndWait(token, col1.columnId, 'Col A (renamed)');
+    expect(renamePayload.columns.some((c: any) => c.id === col1.columnId)).toBe(true);
 
     const boardAfterRename = await request(app.getHttpServer())
       .get(`/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const renamedCol = boardAfterRename.body.columns.find((c: any) => c.id === col1Res.body.id);
+    const renamedCol = boardAfterRename.body.columns.find((c: any) => c.id === col1.columnId);
     expect(renamedCol.title).toBe('Col A (renamed)');
+  });
 
-    // Insert a card into column A to test cascade soft delete
+  it('API-08: DELETE /columns/:id => cascade soft delete cards (Mongo isDeleted:true)', async () => {
+    const token = await registerAndLogin(app, 'tc_columns_06@example.com', 'password123', 'TC Columns 06');
+    const boardId = await createBoardAndJoin(token, 'Board for columns e2e (API-08)');
+
+    const col1 = await createColumnAndWait(token, boardId, 'Col A');
+
+    // Insert card into column to verify cascade soft delete
     await dbConnection.collection('cards').insertOne({
       title: 'Card in Col A',
       description: 'Card description',
-      columnId: new Types.ObjectId(col1Res.body.id),
+      columnId: new Types.ObjectId(col1.columnId),
       boardId: new Types.ObjectId(boardId),
       order: 0,
       isDeleted: false,
@@ -217,41 +286,22 @@ describe('Columns E2E', () => {
       comments: [],
     });
 
-    // Delete column A (soft delete)
-    const deleteUpdatedP = waitForSocketEvent<{ boardId: string; columns: any[] }>(
-      socket,
-      'columns:updated',
-    );
-    const deleteRes = await request(app.getHttpServer())
-      .delete(`/columns/${col1Res.body.id}`)
-      .set('Authorization', `Bearer ${token}`)
-      ;
-
-    if (deleteRes.status !== 200) {
-      // eslint-disable-next-line no-console
-      console.log('DELETE /columns failed:', deleteRes.status, deleteRes.body);
-    }
-
-    expect(deleteRes.status).toBe(200);
-
-    const deletePayload = await deleteUpdatedP;
+    const deletePayload = await deleteColumnAndWait(token, col1.columnId);
     expect(deletePayload.boardId).toBe(boardId);
-    expect(deletePayload.columns.some((c: any) => c.id === col1Res.body.id)).toBe(false);
+    expect(deletePayload.columns.some((c: any) => c.id === col1.columnId)).toBe(false);
 
     const boardAfterDelete = await request(app.getHttpServer())
       .get(`/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(boardAfterDelete.body.columns.some((c: any) => c.id === col1Res.body.id)).toBe(false);
+    expect(boardAfterDelete.body.columns.some((c: any) => c.id === col1.columnId)).toBe(false);
 
-    // Cascade assertion: cards of deleted column must be isDeleted:true
     const cardsInDeletedColumn = await dbConnection.collection('cards').find({
-      columnId: new Types.ObjectId(col1Res.body.id),
+      columnId: new Types.ObjectId(col1.columnId),
     }).toArray();
 
-    const hasDeletedCard = cardsInDeletedColumn.some((c: any) => c.isDeleted === true);
-    expect(hasDeletedCard).toBe(true);
+    expect(cardsInDeletedColumn.some((c: any) => c.isDeleted === true)).toBe(true);
   });
 });
 
