@@ -152,7 +152,8 @@ export class CardsService {
     if (!targetColumn) throw new NotFoundException('Target column not found');
 
     const targetColumnId = targetColumn._id;
-    const boardId = targetColumn.boardId.toString();
+    const boardObjectId = targetColumn.boardId;
+    const boardId = boardObjectId.toString();
 
     // Ensure both columns belong to the same board (cards should not be moved across boards)
     const sourceBoardId = movedCard.boardId?.toString();
@@ -182,7 +183,7 @@ export class CardsService {
       const ops = desired.map((c, idx) => ({
         updateOne: {
           filter: { _id: c._id },
-          update: { $set: { order: idx, columnId: sourceColumnId, boardId } },
+          update: { $set: { order: idx, columnId: sourceColumnId, boardId: boardObjectId } },
         },
       }));
       await this.cardModel.bulkWrite(ops);
@@ -226,7 +227,7 @@ export class CardsService {
               $set: {
                 order: idx,
                 columnId: targetColumnId,
-                boardId,
+                boardId: boardObjectId,
               },
             },
           },
