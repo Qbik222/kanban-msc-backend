@@ -16,15 +16,15 @@ This backend uses two documentation sources:
 - Spec file: [`asyncapi.yaml`](./asyncapi.yaml)
 - Covers:
   - client event: `joinBoard` with payload `{ "boardId": "..." }`
-  - server events: `board:updated`, `board:deleted`
+  - server events: `board:joined`, `board:updated`, `board:deleted`
   - event payload schemas and descriptions
 
 ## 3) Typical workflow
 
 1. Open Swagger and make sure board endpoints work over HTTP.
 2. Open `asyncapi.yaml` to see Socket.IO event contracts.
-3. Connect Socket.IO client to `http://localhost:3000`.
-4. Emit `joinBoard` with the target `boardId`.
+3. Connect Socket.IO client to `http://localhost:3000`. **In Postman, use New → Socket.IO** (not raw WebSocket).
+4. Emit `joinBoard` with the target `boardId`. Listen for `board:joined` as confirmation.
 5. Trigger `PATCH /boards/:id` or `DELETE /boards/:id` in Swagger/Postman.
 6. Verify `board:updated` or `board:deleted` events are received.
 

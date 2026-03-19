@@ -82,7 +82,7 @@ export class BoardsController {
     @Body() dto: UpdateBoardDto,
   ): Promise<BoardResponseDto> {
     const board = await this.boardsService.update(id, req.user.userId, dto);
-    this.eventsGateway.emitBoardUpdated(id);
+    this.eventsGateway.emitBoardUpdated(board);
     return board;
   }
 
@@ -96,7 +96,7 @@ export class BoardsController {
     @Param('id') id: string,
   ): Promise<BoardResponseDto> {
     const board = await this.boardsService.remove(id, req.user.userId);
-    this.eventsGateway.emitBoardDeleted(id);
+    this.eventsGateway.emitBoardDeleted(board);
     return board;
   }
 }

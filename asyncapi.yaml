@@ -1,4 +1,4 @@
-﻿asyncapi: 2.6.0
+asyncapi: 2.6.0
 id: urn:kanban:backend:realtime
 info:
   title: Kanban Backend Realtime API
@@ -20,6 +20,13 @@ channels:
       operationId: joinBoard
       message:
         $ref: '#/components/messages/JoinBoardMessage'
+  boardJoined:
+    description: Server confirms client joined the board room.
+    subscribe:
+      summary: Board joined event
+      operationId: onBoardJoined
+      message:
+        $ref: '#/components/messages/BoardJoinedMessage'
   boardUpdated:
     description: Server event emitted after successful board rename (PATCH /boards/:id).
     subscribe:
@@ -41,17 +48,49 @@ components:
       title: Join board room
       payload:
         $ref: '#/components/schemas/BoardIdPayload'
+    BoardJoinedMessage:
+      name: board:joined
+      title: Board joined
+      payload:
+        $ref: '#/components/schemas/BoardIdPayload'
     BoardUpdatedMessage:
       name: board:updated
       title: Board updated
       payload:
-        $ref: '#/components/schemas/BoardIdPayload'
+        $ref: '#/components/schemas/BoardResponsePayload'
     BoardDeletedMessage:
       name: board:deleted
       title: Board deleted
       payload:
-        $ref: '#/components/schemas/BoardIdPayload'
+        $ref: '#/components/schemas/BoardResponsePayload'
   schemas:
+    BoardResponsePayload:
+      type: object
+      description: Full board data sent on board:updated / board:deleted.
+      required:
+        - id
+        - title
+        - ownerId
+        - isDeleted
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId of the board.
+        title:
+          type: string
+          description: Board title.
+        ownerId:
+          type: string
+          description: Owner user ID.
+        isDeleted:
+          type: boolean
+          description: For board:deleted this is true.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     BoardIdPayload:
       type: object
       additionalProperties: false
