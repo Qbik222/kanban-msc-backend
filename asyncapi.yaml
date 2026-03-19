@@ -1,0 +1,65 @@
+﻿asyncapi: 2.6.0
+id: urn:kanban:backend:realtime
+info:
+  title: Kanban Backend Realtime API
+  version: 1.0.0
+  description: |
+    AsyncAPI specification for Socket.IO board events.
+    For quick usage and Swagger overview, see documentation.md.
+defaultContentType: application/json
+servers:
+  local:
+    url: localhost:3000
+    protocol: socket.io
+    description: Local NestJS backend
+channels:
+  joinBoard:
+    description: Client subscribes to updates for a specific board room.
+    publish:
+      summary: Join board room
+      operationId: joinBoard
+      message:
+        $ref: '#/components/messages/JoinBoardMessage'
+  boardUpdated:
+    description: Server event emitted after successful board rename (PATCH /boards/:id).
+    subscribe:
+      summary: Board updated event
+      operationId: onBoardUpdated
+      message:
+        $ref: '#/components/messages/BoardUpdatedMessage'
+  boardDeleted:
+    description: Server event emitted after successful soft delete (DELETE /boards/:id).
+    subscribe:
+      summary: Board deleted event
+      operationId: onBoardDeleted
+      message:
+        $ref: '#/components/messages/BoardDeletedMessage'
+components:
+  messages:
+    JoinBoardMessage:
+      name: joinBoard
+      title: Join board room
+      payload:
+        $ref: '#/components/schemas/BoardIdPayload'
+    BoardUpdatedMessage:
+      name: board:updated
+      title: Board updated
+      payload:
+        $ref: '#/components/schemas/BoardIdPayload'
+    BoardDeletedMessage:
+      name: board:deleted
+      title: Board deleted
+      payload:
+        $ref: '#/components/schemas/BoardIdPayload'
+  schemas:
+    BoardIdPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - boardId
+      properties:
+        boardId:
+          type: string
+          description: MongoDB ObjectId of the board.
+          examples:
+            - 65f0b3c3f2b7f6a1e9b1a001
