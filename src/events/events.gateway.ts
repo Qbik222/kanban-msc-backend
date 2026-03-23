@@ -14,9 +14,10 @@ import { ColumnResponseDto } from '../boards/dto/column-response.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
 import { BoardDetailsResponseDto } from '../boards/dto/board-details-response.dto';
 import { PermissionsService } from '../permissions';
+import { getSocketIoCorsOptions } from '../config/cors-origins';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: getSocketIoCorsOptions(),
 })
 export class EventsGateway {
   private readonly logger = new Logger(EventsGateway.name);
