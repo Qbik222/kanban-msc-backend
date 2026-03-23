@@ -21,10 +21,11 @@ import { CreateColumnDto } from './dto/create-column.dto';
 import { UpdateColumnDto } from './dto/update-column.dto';
 import { ReorderColumnsDto } from './dto/reorder-columns.dto';
 import { ColumnResponseDto } from '../boards/dto/column-response.dto';
+import { BoardPermissionGuard, RequirePermissions } from '../permissions';
 
 @ApiTags('columns')
 @Controller('columns')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BoardPermissionGuard)
 @ApiBearerAuth()
 export class ColumnsController {
   constructor(private readonly columnsService: ColumnsService) {}
@@ -35,6 +36,7 @@ export class ColumnsController {
   @ApiResponse({ status: 201, description: 'Column created', type: ColumnResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Board not found' })
+  @RequirePermissions('column:create')
   async create(
     @Req() req: { user: { userId: string } },
     @Body() dto: CreateColumnDto,
@@ -48,6 +50,7 @@ export class ColumnsController {
   @ApiResponse({ status: 200, description: 'Columns reordered', type: [ColumnResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Column not found' })
+  @RequirePermissions('column:reorder')
   async reorder(
     @Req() req: { user: { userId: string } },
     @Body() dto: ReorderColumnsDto,
@@ -61,6 +64,7 @@ export class ColumnsController {
   @ApiResponse({ status: 200, description: 'Column updated', type: ColumnResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Column not found' })
+  @RequirePermissions('column:update')
   async update(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,
@@ -74,6 +78,7 @@ export class ColumnsController {
   @ApiResponse({ status: 200, description: 'Column deleted' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Column not found' })
+  @RequirePermissions('column:delete')
   async remove(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,

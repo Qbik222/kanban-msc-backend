@@ -59,7 +59,7 @@ describe('Cards E2E', () => {
     const boardId = boardRes.body.id as string;
 
     const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
-    socket.emit('joinBoard', { boardId });
+    socket.emit('joinBoard', { boardId, token });
     await joinedPromise;
 
     return { token, boardId };
@@ -208,6 +208,7 @@ describe('Cards E2E', () => {
       await dbConnection.collection('cards').deleteMany({});
       await dbConnection.collection('columns').deleteMany({});
       await dbConnection.collection('boards').deleteMany({});
+      await dbConnection.collection('boardmembers').deleteMany({});
       await dbConnection.collection('users').deleteMany({});
     }
   });

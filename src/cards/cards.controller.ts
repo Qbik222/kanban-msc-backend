@@ -22,10 +22,11 @@ import { UpdateCardDto } from './dto/update-card.dto';
 import { MoveCardDto } from './dto/move-card.dto';
 import { AddCommentDto } from './dto/add-comment.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
+import { BoardPermissionGuard, RequirePermissions } from '../permissions';
 
 @ApiTags('cards')
 @Controller('cards')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BoardPermissionGuard)
 @ApiBearerAuth()
 export class CardsController {
   constructor(private readonly cardsService: CardsService) {}
@@ -34,6 +35,7 @@ export class CardsController {
   @ApiOperation({ summary: 'Create a new card' })
   @ApiBody({ type: CreateCardDto })
   @ApiResponse({ status: 201, description: 'Card created', type: CardResponseDto })
+  @RequirePermissions('card:create')
   async create(
     @Req() req: { user: { userId: string } },
     @Body() dto: CreateCardDto,
@@ -45,6 +47,7 @@ export class CardsController {
   @ApiOperation({ summary: 'Update card fields' })
   @ApiBody({ type: UpdateCardDto })
   @ApiResponse({ status: 200, description: 'Card updated', type: CardResponseDto })
+  @RequirePermissions('card:update')
   async update(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,
@@ -57,6 +60,7 @@ export class CardsController {
   @ApiOperation({ summary: 'Move card to another column and recalculate order' })
   @ApiBody({ type: MoveCardDto })
   @ApiResponse({ status: 200, description: 'Card moved', type: CardResponseDto })
+  @RequirePermissions('card:move')
   async move(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,
@@ -69,6 +73,7 @@ export class CardsController {
   @ApiOperation({ summary: 'Add a comment to card' })
   @ApiBody({ type: AddCommentDto })
   @ApiResponse({ status: 201, description: 'Comment added', type: CardResponseDto })
+  @RequirePermissions('comment:create')
   async addComment(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,
@@ -80,12 +85,24 @@ export class CardsController {
   @Delete(':id/comments/:commentId')
   @ApiOperation({ summary: 'Delete a comment from card' })
   @ApiResponse({ status: 200, description: 'Comment deleted', type: CardResponseDto })
+  @RequirePermissions('board:read')
   async deleteComment(
     @Req() req: { user: { userId: string } },
     @Param('id') id: string,
     @Param('commentId') commentId: string,
   ): Promise<CardResponseDto> {
     return this.cardsService.deleteComment(id, commentId, req.user.userId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft delete a card' })
+  @ApiResponse({ status: 200, description: 'Card deleted', type: CardResponseDto })
+  @RequirePermissions('card:delete')
+  async remove(
+    @Req() req: { user: { userId: string } },
+    @Param('id') id: string,
+  ): Promise<CardResponseDto> {
+    return this.cardsService.remove(id, req.user.userId);
   }
 }
 

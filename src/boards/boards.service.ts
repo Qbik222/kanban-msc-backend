@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,12 +12,14 @@ import { BoardResponseDto } from './dto/board-response.dto';
 import { BoardDetailsResponseDto } from './dto/board-details-response.dto';
 import { ColumnResponseDto } from './dto/column-response.dto';
 import { CardResponseDto } from './dto/card-response.dto';
+import { PermissionsService } from '../permissions/permissions.service';
 
 @Injectable()
 export class BoardsService {
   constructor(
     @InjectModel(Board.name)
     private readonly boardModel: Model<Board>,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   private mapId(value: unknown): string {
@@ -108,13 +111,19 @@ export class BoardsService {
       projectIds: (dto.projectIds ?? []).map((id) => new Types.ObjectId(id)),
     });
     const savedBoard = await board.save();
+    await this.permissionsService.ensureOwnerMembership(savedBoard._id.toString(), ownerId);
     return this.toBoardResponse(savedBoard);
   }
 
   async findAllByOwner(ownerId: string): Promise<BoardResponseDto[]> {
+    const boardIds = await this.permissionsService.getBoardIdsForUser(ownerId);
+    if (boardIds.length === 0) {
+      return [];
+    }
+
     const boards = await this.boardModel
       .find({
-        ownerId: new Types.ObjectId(ownerId),
+        _id: { $in: boardIds.map((id) => new Types.ObjectId(id)) },
         isDeleted: false,
       })
       .sort({ updatedAt: -1 })
@@ -123,10 +132,11 @@ export class BoardsService {
   }
 
   async findOne(id: string, ownerId: string): Promise<BoardDetailsResponseDto> {
+    await this.permissionsService.assertPermission(ownerId, id, 'board:read');
+
     const board = await this.boardModel
       .findOne({
         _id: new Types.ObjectId(id),
-        ownerId: new Types.ObjectId(ownerId),
         isDeleted: false,
       })
       .populate({
@@ -149,11 +159,12 @@ export class BoardsService {
   }
 
   async update(id: string, ownerId: string, dto: UpdateBoardDto): Promise<BoardResponseDto> {
+    await this.permissionsService.assertPermission(ownerId, id, 'board:update');
+
     const board = await this.boardModel
       .findOneAndUpdate(
         {
           _id: new Types.ObjectId(id),
-          ownerId: new Types.ObjectId(ownerId),
           isDeleted: false,
         },
         { $set: dto },
@@ -169,11 +180,12 @@ export class BoardsService {
   }
 
   async remove(id: string, ownerId: string): Promise<BoardResponseDto> {
+    await this.permissionsService.assertPermission(ownerId, id, 'board:delete');
+
     const board = await this.boardModel
       .findOneAndUpdate(
         {
           _id: new Types.ObjectId(id),
-          ownerId: new Types.ObjectId(ownerId),
           isDeleted: false,
         },
         { $set: { isDeleted: true } },
@@ -186,5 +198,32 @@ export class BoardsService {
     }
 
     return this.toBoardResponse(board);
+  }
+
+  async inviteMember(boardId: string, actorUserId: string, targetUserId: string): Promise<void> {
+    await this.permissionsService.assertPermission(actorUserId, boardId, 'member:invite');
+    await this.permissionsService.inviteMember(boardId, actorUserId, targetUserId);
+  }
+
+  async updateMemberRole(
+    boardId: string,
+    actorUserId: string,
+    targetUserId: string,
+    role: 'owner' | 'editor' | 'viewer',
+  ): Promise<void> {
+    await this.permissionsService.assertPermission(actorUserId, boardId, 'member:update_role');
+    await this.permissionsService.updateMemberRole(boardId, actorUserId, targetUserId, role);
+  }
+
+  async removeMember(boardId: string, actorUserId: string, targetUserId: string): Promise<void> {
+    const actorHasPermission = await this.permissionsService.hasPermission(
+      actorUserId,
+      boardId,
+      'member:remove',
+    );
+    if (!actorHasPermission) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+    await this.permissionsService.removeMember(boardId, actorUserId, targetUserId);
   }
 }

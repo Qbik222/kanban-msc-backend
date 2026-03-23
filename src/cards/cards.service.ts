@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { UpdateCardDto } from './dto/update-card.dto';
 import { MoveCardDto } from './dto/move-card.dto';
 import { AddCommentDto } from './dto/add-comment.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
+import { PermissionsService } from '../permissions';
 
 @Injectable()
 export class CardsService {
@@ -24,6 +26,7 @@ export class CardsService {
     private readonly columnModel: Model<Column>,
     private readonly boardsService: BoardsService,
     private readonly eventsGateway: EventsGateway,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   private mapId(value: unknown): string {
@@ -294,6 +297,28 @@ export class CardsService {
 
     await this.boardsService.findOne(boardId, userId);
 
+    const canDeleteAny = await this.permissionsService.hasPermission(
+      userId,
+      boardId,
+      'comment:delete:any',
+    );
+    if (!canDeleteAny) {
+      const targetComment = (card.comments ?? []).find((comment: any) => {
+        const existingId = this.mapId(comment?._id ?? comment?.id);
+        return existingId === commentId;
+      });
+      const isOwnComment = targetComment
+        && this.mapId((targetComment as any).authorId) === userId;
+      const canDeleteOwn = await this.permissionsService.hasPermission(
+        userId,
+        boardId,
+        'comment:delete:own',
+      );
+      if (!isOwnComment || !canDeleteOwn) {
+        throw new ForbiddenException('Insufficient permissions');
+      }
+    }
+
     const updated = await this.cardModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), isDeleted: false },
@@ -309,6 +334,46 @@ export class CardsService {
     this.eventsGateway.emitCardUpdated(boardId, response);
 
     return response;
+  }
+
+  async remove(id: string, userId: string): Promise<CardResponseDto> {
+    const card = await this.cardModel
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
+      .exec();
+    if (!card) throw new NotFoundException('Card not found');
+
+    const boardId = card.boardId?.toString();
+    if (!boardId) throw new BadRequestException('Card boardId is missing');
+
+    await this.permissionsService.assertPermission(userId, boardId, 'card:delete');
+
+    const deleted = await this.cardModel
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(id), isDeleted: false },
+        { $set: { isDeleted: true } },
+        { new: true },
+      )
+      .exec();
+    if (!deleted) throw new NotFoundException('Card not found');
+
+    const activeCards = await this.cardModel
+      .find({ columnId: card.columnId, isDeleted: false })
+      .sort({ order: 1 })
+      .exec();
+
+    if (activeCards.length > 0) {
+      const ops = activeCards.map((current, idx) => ({
+        updateOne: {
+          filter: { _id: current._id },
+          update: { $set: { order: idx } },
+        },
+      }));
+      await this.cardModel.bulkWrite(ops);
+    }
+
+    const snapshot = await this.boardsService.findOne(boardId, userId);
+    this.eventsGateway.emitCardMoved(boardId, snapshot);
+    return this.toCardResponse(deleted);
   }
 }
 

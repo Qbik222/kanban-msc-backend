@@ -5,10 +5,12 @@ import { Column, ColumnSchema } from '../columns/column.schema';
 import { Card, CardSchema } from '../cards/card.schema';
 import { BoardsController, BoardsService } from './index';
 import { EventsModule } from '../events/events.module';
+import { PermissionsModule } from '../permissions';
 
 @Module({
   imports: [
     EventsModule,
+    PermissionsModule,
     MongooseModule.forFeature([
       { name: Board.name, schema: BoardSchema },
       { name: Column.name, schema: ColumnSchema },

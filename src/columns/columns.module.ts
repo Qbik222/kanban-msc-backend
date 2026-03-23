@@ -6,6 +6,7 @@ import { ColumnsController } from './columns.controller';
 import { ColumnsService } from './columns.service';
 import { BoardsModule } from '../boards/boards.module';
 import { EventsModule } from '../events/events.module';
+import { PermissionsModule } from '../permissions';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { EventsModule } from '../events/events.module';
     ]),
     BoardsModule,
     EventsModule,
+    PermissionsModule,
   ],
   controllers: [ColumnsController],
   providers: [ColumnsService],
