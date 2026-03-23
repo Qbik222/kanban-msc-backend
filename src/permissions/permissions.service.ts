@@ -38,7 +38,6 @@ export class PermissionsService {
 
     const board = await this.boardModel.findOne({
       _id: boardObjectId,
-      isDeleted: { $ne: true },
     }).exec();
 
     if (!board) {

@@ -16,11 +16,16 @@ export class BoardPermissionGuard implements CanActivate {
   ) {}
 
   private async resolveBoardId(req: any): Promise<string | null> {
+    const path = String(req?.path ?? req?.originalUrl ?? '');
+    const routePath = String(req?.route?.path ?? '');
+
     if (req.params?.boardId) return req.params.boardId;
-    if (req.baseUrl?.includes('/boards') && req.params?.id) return req.params.id;
+    if ((path.startsWith('/boards/') || routePath === ':id') && req.params?.id) {
+      return req.params.id;
+    }
     if (req.body?.boardId) return req.body.boardId;
 
-    if (req.baseUrl?.includes('/columns')) {
+    if (path.startsWith('/columns/') || path === '/columns/reorder' || routePath.includes('columns')) {
       if (req.params?.id) {
         return this.permissionsService.resolveBoardIdFromColumn(req.params.id);
       }
@@ -29,7 +34,7 @@ export class BoardPermissionGuard implements CanActivate {
       }
     }
 
-    if (req.baseUrl?.includes('/cards') && req.params?.id) {
+    if ((path.startsWith('/cards/') || routePath.includes('cards')) && req.params?.id) {
       return this.permissionsService.resolveBoardIdFromCard(req.params.id);
     }
 
@@ -59,7 +64,7 @@ export class BoardPermissionGuard implements CanActivate {
     if (!userId) return false;
 
     // Global-only permissions for authenticated users.
-    if (permissions.includes('board:create')) {
+    if (permissions.includes('board:create') || permissions.includes('board:list')) {
       return true;
     }
 
