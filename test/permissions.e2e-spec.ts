@@ -1,4 +1,3 @@
-import { ValidationPipe } from '@nestjs/common';
 import { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { getConnectionToken } from '@nestjs/mongoose';
@@ -7,6 +6,7 @@ import { Connection, Types } from 'mongoose';
 import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
+import { setupE2EHttpApp } from './setup-e2e-app';
 
 jest.setTimeout(30000);
 
@@ -45,14 +45,8 @@ describe('Permissions E2E', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    setupE2EHttpApp(app);
     app.useWebSocketAdapter(new IoAdapter(app));
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
     await app.init();
 
     dbConnection = app.get<Connection>(getConnectionToken());
@@ -75,6 +69,7 @@ describe('Permissions E2E', () => {
       await dbConnection.collection('columns').deleteMany({});
       await dbConnection.collection('boards').deleteMany({});
       await dbConnection.collection('boardmembers').deleteMany({});
+      await dbConnection.collection('refreshsessions').deleteMany({});
       await dbConnection.collection('users').deleteMany({});
     }
   });

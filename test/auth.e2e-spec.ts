@@ -1,11 +1,21 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
-import { AppModule } from '../src/app.module';
 import request from 'supertest';
+import { AppModule } from '../src/app.module';
+import { setupE2EHttpApp } from './setup-e2e-app';
 
 jest.setTimeout(30000);
+
+function cookieHeaderFromSetCookie(
+  setCookie: string[] | undefined,
+): string {
+  if (!setCookie?.length) {
+    return '';
+  }
+  return setCookie.map((c) => c.split(';')[0]).join('; ');
+}
 
 describe('Auth E2E', () => {
   let app: INestApplication;
@@ -19,13 +29,7 @@ describe('Auth E2E', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    setupE2EHttpApp(app);
     await app.init();
     dbConnection = app.get<Connection>(getConnectionToken());
     console.log('testMongoUri', testMongoUri);
@@ -42,6 +46,7 @@ describe('Auth E2E', () => {
 
   beforeEach(async () => {
     if (dbConnection && dbConnection.readyState === 1) {
+      await dbConnection.collection('refreshsessions').deleteMany({});
       await dbConnection.collection('users').deleteMany({});
     }
   });
@@ -60,11 +65,15 @@ describe('Auth E2E', () => {
 
     expect(res.body).toHaveProperty('user');
     expect(res.body).toHaveProperty('accessToken');
+    expect(res.body).toHaveProperty('csrfToken');
     expect(res.body.user.email).toBe(payload.email.toLowerCase());
     expect(typeof res.body.accessToken).toBe('string');
-    expect(res.body.accessToken.length).toBeGreaterThan(0);
+    expect(typeof res.body.csrfToken).toBe('string');
+    expect(res.headers['set-cookie']).toBeDefined();
+    expect(
+      String(res.headers['set-cookie']).toLowerCase(),
+    ).toContain('httponly');
 
-    // Verify password is hashed in DB
     const createdUser = await dbConnection
       .collection('users')
       .findOne({ email: payload.email.toLowerCase() });
@@ -80,7 +89,6 @@ describe('Auth E2E', () => {
       name: 'TC02 User',
     };
 
-    // Ensure user exists (register first)
     await request(app.getHttpServer())
       .post('/auth/register')
       .send(payload)
@@ -93,6 +101,7 @@ describe('Auth E2E', () => {
 
     expect(loginRes.body).toHaveProperty('user');
     expect(loginRes.body).toHaveProperty('accessToken');
+    expect(loginRes.body).toHaveProperty('csrfToken');
     expect(loginRes.body.user.email).toBe(payload.email.toLowerCase());
 
     const token = loginRes.body.accessToken as string;
@@ -106,5 +115,94 @@ describe('Auth E2E', () => {
     expect(meRes.body).toHaveProperty('id');
     expect(meRes.body).toHaveProperty('name');
   });
-});
 
+  it('API-03: should refresh tokens with cookie and CSRF header', async () => {
+    const agent = request.agent(app.getHttpServer());
+    await agent
+      .post('/auth/register')
+      .send({
+        email: 'tc03@example.com',
+        password: 'password123',
+        name: 'TC03',
+      })
+      .expect(201);
+
+    const loginRes = await agent
+      .post('/auth/login')
+      .send({ email: 'tc03@example.com', password: 'password123' })
+      .expect(200);
+
+    const refreshRes = await agent
+      .post('/auth/refresh')
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(200);
+
+    expect(refreshRes.body).toHaveProperty('accessToken');
+    expect(refreshRes.body).toHaveProperty('csrfToken');
+    expect(refreshRes.body.csrfToken).not.toBe(loginRes.body.csrfToken);
+
+    await request(app.getHttpServer())
+      .get('/users/me')
+      .set('Authorization', `Bearer ${refreshRes.body.accessToken}`)
+      .expect(200);
+  });
+
+  it('API-04: should reject reuse of rotated refresh token', async () => {
+    const agent = request.agent(app.getHttpServer());
+    await agent
+      .post('/auth/register')
+      .send({
+        email: 'tc04@example.com',
+        password: 'password123',
+        name: 'TC04',
+      })
+      .expect(201);
+
+    const loginRes = await agent
+      .post('/auth/login')
+      .send({ email: 'tc04@example.com', password: 'password123' })
+      .expect(200);
+
+    const oldCookieHeader = cookieHeaderFromSetCookie(
+      loginRes.headers['set-cookie'] as string[] | undefined,
+    );
+
+    await agent
+      .post('/auth/refresh')
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', oldCookieHeader)
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(401);
+  });
+
+  it('API-05: should logout and clear refresh session', async () => {
+    const agent = request.agent(app.getHttpServer());
+    await agent
+      .post('/auth/register')
+      .send({
+        email: 'tc05@example.com',
+        password: 'password123',
+        name: 'TC05',
+      })
+      .expect(201);
+
+    const loginRes = await agent
+      .post('/auth/login')
+      .send({ email: 'tc05@example.com', password: 'password123' })
+      .expect(200);
+
+    await agent
+      .post('/auth/logout')
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(204);
+
+    await agent
+      .post('/auth/refresh')
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(401);
+  });
+});

@@ -3,11 +3,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { getEnableCorsOptions, getResolvedCorsOrigins } from './config/cors-origins';
+import { getResolvedCorsOrigins } from './config/cors-origins';
+import { configureHttpMiddleware } from './app-configuration';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors(getEnableCorsOptions());
+  configureHttpMiddleware(app);
   // eslint-disable-next-line no-console
   console.log(`CORS allowed origins: ${getResolvedCorsOrigins().join(', ')}`);
   app.useWebSocketAdapter(new IoAdapter(app));

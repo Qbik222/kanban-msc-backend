@@ -1,9 +1,30 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiHeader,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UserResponseDto } from '../users/dto/user-response.dto';
+import {
+  getClearCookieOptions,
+  getRefreshCookieMaxAgeMs,
+  getRefreshCookieName,
+  getRefreshCookieOptions,
+} from './auth-cookie.config';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -26,12 +47,27 @@ export class AuthController {
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
         },
-        accessToken: 'jwt-token',
+        accessToken: 'jwt-access',
+        csrfToken: 'hex-hmac',
       },
     },
   })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.register(dto);
+    const maxAge = getRefreshCookieMaxAgeMs();
+    res.cookie(
+      getRefreshCookieName(),
+      result.refreshToken,
+      getRefreshCookieOptions(maxAge),
+    );
+    return {
+      user: result.user,
+      accessToken: result.accessToken,
+      csrfToken: result.csrfToken,
+    };
   }
 
   @HttpCode(HttpStatus.OK)
@@ -42,8 +78,74 @@ export class AuthController {
     status: 200,
     description: 'User successfully logged in',
   })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+    const maxAge = getRefreshCookieMaxAgeMs();
+    res.cookie(
+      getRefreshCookieName(),
+      result.refreshToken,
+      getRefreshCookieOptions(maxAge),
+    );
+    return {
+      user: result.user,
+      accessToken: result.accessToken,
+      csrfToken: result.csrfToken,
+    };
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('refresh')
+  @ApiOperation({
+    summary: 'Refresh access token (HttpOnly refresh cookie + X-CSRF-Token header)',
+  })
+  @ApiHeader({
+    name: 'X-CSRF-Token',
+    description: 'CSRF token from last login/register/refresh response body',
+    required: true,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'New access token; new refresh cookie set',
+    schema: {
+      example: { accessToken: 'jwt-access', csrfToken: 'hex-hmac' },
+    },
+  })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookie = req.cookies?.[getRefreshCookieName()] as string | undefined;
+    const csrf = req.headers['x-csrf-token'] as string | undefined;
+    const result = await this.authService.refreshTokens(cookie, csrf);
+    const maxAge = getRefreshCookieMaxAgeMs();
+    res.cookie(
+      getRefreshCookieName(),
+      result.refreshToken,
+      getRefreshCookieOptions(maxAge),
+    );
+    return {
+      accessToken: result.accessToken,
+      csrfToken: result.csrfToken,
+    };
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('logout')
+  @ApiOperation({
+    summary: 'Logout (revoke refresh session, clear cookie; X-CSRF-Token required)',
+  })
+  @ApiHeader({
+    name: 'X-CSRF-Token',
+    description: 'CSRF token matching current refresh session',
+    required: true,
+  })
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const cookie = req.cookies?.[getRefreshCookieName()] as string | undefined;
+    const csrf = req.headers['x-csrf-token'] as string | undefined;
+    await this.authService.logout(cookie, csrf);
+    res.clearCookie(getRefreshCookieName(), getClearCookieOptions());
   }
 }
-

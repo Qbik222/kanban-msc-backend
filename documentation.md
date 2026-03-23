@@ -7,8 +7,9 @@ This backend uses two documentation sources:
 
 ## 1) Swagger (HTTP API)
 
-- URL: [http://localhost:3000/api](http://localhost:3000/api)
+- URL: [http://localhost:3500/api](http://localhost:3500/api) (порт за замовчуванням з `src/main.ts`)
 - Covers: REST endpoints, request DTOs, response DTOs, auth requirements.
+- **Auth**: `POST /auth/register`, `POST /auth/login` повертають `accessToken` + `csrfToken` і встановлюють HttpOnly **refresh** cookie. `POST /auth/refresh` та `POST /auth/logout` потребують cookie та заголовка `X-CSRF-Token` (деталі — [docs/frontend.md](./docs/frontend.md)). Для перевірки cookie в Postman увімкніть збереження cookies.
 - Use it when you need to test endpoints like `POST /boards`, `PATCH /boards/:id`, `DELETE /boards/:id`, `POST /columns`, `PATCH /columns/reorder`, `PATCH /columns/:id`, `DELETE /columns/:id`, `POST /cards`, `PATCH /cards/:id`, `PATCH /cards/:id/move`, `POST /cards/:id/comments`, `DELETE /cards/:id/comments/:commentId`.
 
 ## 2) AsyncAPI (WebSocket / Socket.IO)
@@ -23,7 +24,7 @@ This backend uses two documentation sources:
 
 1. Open Swagger and make sure board endpoints work over HTTP.
 2. Open `asyncapi.yaml` to see Socket.IO event contracts.
-3. Connect Socket.IO client to `http://localhost:3000`. **In Postman, use New → Socket.IO** (not raw WebSocket).
+3. Connect Socket.IO client to `http://localhost:3500`. **In Postman, use New → Socket.IO** (not raw WebSocket).
 4. Emit `joinBoard` with the target `boardId`. Listen for `board:joined` as confirmation.
 5. Trigger `PATCH /boards/:id`, `DELETE /boards/:id`, or column/card operations in Swagger/Postman.
 6. Verify `board:updated`, `board:deleted`, `columns:updated`, `card_created`, `card_updated`, `card_moved`, or `comment_added` events are received.
@@ -48,5 +49,5 @@ npx @asyncapi/cli generate fromTemplate asyncapi.yaml @asyncapi/html-template -o
 
 ## Quick links
 
-- Swagger UI: [http://localhost:3000/api](http://localhost:3000/api)
+- Swagger UI: [http://localhost:3500/api](http://localhost:3500/api)
 - AsyncAPI spec: [`asyncapi.yaml`](./asyncapi.yaml)
