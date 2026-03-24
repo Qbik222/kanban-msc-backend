@@ -83,7 +83,7 @@ export class CardsService {
 
     const created = await new this.cardModel({
       title: dto.title,
-      description: dto.description,
+      description: dto.description ?? '',
       columnId: column._id,
       boardId: column.boardId,
       order: count, // 0-based to match existing columns/cards ordering in the project

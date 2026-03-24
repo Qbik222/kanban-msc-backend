@@ -29,6 +29,26 @@ export function verifyCsrfToken(
   }
 }
 
+/** Double-submit: header must match readable CSRF cookie (both UTF-8, timing-safe). */
+export function verifyCsrfDoubleSubmit(
+  header: string | undefined,
+  cookieValue: string | undefined,
+): boolean {
+  if (!header || !cookieValue) {
+    return false;
+  }
+  try {
+    const a = Buffer.from(header, 'utf8');
+    const b = Buffer.from(cookieValue, 'utf8');
+    if (a.length !== b.length) {
+      return false;
+    }
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 /** Parses values like `15m`, `7d`, `3600s` into milliseconds. */
 export function parseExpiresToMs(exp: string): number {
   const m = /^(\d+)([smhd])$/i.exec(exp.trim());

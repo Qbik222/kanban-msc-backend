@@ -86,21 +86,27 @@ describe('Cards E2E', () => {
     columnId: string,
     cardPayload: {
       title: string;
-      description: string;
+      description?: string;
       deadline?: { startDate: string; endDate: string };
     },
   ): Promise<{ cardId: string; wsPayload: any; httpBody: any }> {
     const cardCreatedP = waitForSocketEvent<any>(socket, 'card:created');
 
+    const body: Record<string, unknown> = {
+      title: cardPayload.title,
+      columnId,
+    };
+    if (cardPayload.description !== undefined) {
+      body.description = cardPayload.description;
+    }
+    if (cardPayload.deadline) {
+      body.deadline = cardPayload.deadline;
+    }
+
     const httpRes = await request(app.getHttpServer())
       .post('/cards')
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: cardPayload.title,
-        description: cardPayload.description,
-        columnId,
-        deadline: cardPayload.deadline,
-      })
+      .send(body)
       .expect(201);
 
     const wsPayload = await cardCreatedP;
@@ -295,6 +301,21 @@ describe('Cards E2E', () => {
 
     expect(card2.cardId).toBeTruthy();
     expect(card2.wsPayload.title).toBe('Card 2');
+  });
+
+  it('API-14b: POST /cards without description => empty string', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_04b@example.com',
+      'password123',
+      'TC Cards 04b',
+      'Board for optional description',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'Card no description' });
+
+    expect(card.httpBody.description).toBe('');
+    expect(card.wsPayload.description).toBe('');
   });
 
   it('API-15: POST /cards => ws card:created (another card)', async () => {

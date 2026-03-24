@@ -15,6 +15,7 @@ import {
   parseExpiresToMs,
   randomUUID,
   signCsrfToken,
+  verifyCsrfDoubleSubmit,
   verifyCsrfToken,
 } from './auth-tokens.util';
 
@@ -45,6 +46,25 @@ export class AuthService {
       process.env.CSRF_HMAC_SECRET ||
       this.getRefreshSecret()
     );
+  }
+
+  /**
+   * Prefer double-submit (header === readable CSRF cookie) for cold start after reload.
+   * If the CSRF cookie is absent (legacy clients), fall back to HMAC verification vs jti.
+   */
+  private isValidCsrf(
+    jti: string,
+    csrfHeader: string | undefined,
+    csrfCookie: string | undefined,
+  ): boolean {
+    if (
+      csrfHeader &&
+      csrfCookie &&
+      verifyCsrfDoubleSubmit(csrfHeader, csrfCookie)
+    ) {
+      return true;
+    }
+    return verifyCsrfToken(jti, this.getCsrfSecret(), csrfHeader);
   }
 
   private buildAccessPayload(user: User) {
@@ -131,6 +151,7 @@ export class AuthService {
   async refreshTokens(
     refreshCookie: string | undefined,
     csrfHeader: string | undefined,
+    csrfCookie: string | undefined,
   ): Promise<{ accessToken: string; refreshToken: string; csrfToken: string }> {
     if (!refreshCookie) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -151,7 +172,7 @@ export class AuthService {
     }
 
     const jti = payload.jti;
-    if (!verifyCsrfToken(jti, this.getCsrfSecret(), csrfHeader)) {
+    if (!this.isValidCsrf(jti, csrfHeader, csrfCookie)) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -190,6 +211,7 @@ export class AuthService {
   async logout(
     refreshCookie: string | undefined,
     csrfHeader: string | undefined,
+    csrfCookie: string | undefined,
   ): Promise<void> {
     if (!refreshCookie) {
       return;
@@ -209,7 +231,7 @@ export class AuthService {
       return;
     }
 
-    if (!verifyCsrfToken(payload.jti, this.getCsrfSecret(), csrfHeader)) {
+    if (!this.isValidCsrf(payload.jti, csrfHeader, csrfCookie)) {
       return;
     }
 

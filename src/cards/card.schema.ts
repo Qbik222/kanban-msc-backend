@@ -14,7 +14,7 @@ export class Card extends Document {
   @Prop({ required: true, trim: true })
   title!: string;
 
-  @Prop({ required: true, trim: true })
+  @Prop({ required: false, default: '', trim: true })
   description!: string;
 
   @Prop({ default: 0 })

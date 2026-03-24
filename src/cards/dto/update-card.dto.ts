@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsMongoId,
@@ -23,6 +23,7 @@ export class UpdateCardDto {
 
   @ApiPropertyOptional({ example: 'Login form with validation', minLength: 1, maxLength: 2000 })
   @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsString()
   @MinLength(1)
   @MaxLength(2000)

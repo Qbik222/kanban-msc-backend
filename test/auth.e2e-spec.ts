@@ -69,10 +69,17 @@ describe('Auth E2E', () => {
     expect(res.body.user.email).toBe(payload.email.toLowerCase());
     expect(typeof res.body.accessToken).toBe('string');
     expect(typeof res.body.csrfToken).toBe('string');
-    expect(res.headers['set-cookie']).toBeDefined();
-    expect(
-      String(res.headers['set-cookie']).toLowerCase(),
-    ).toContain('httponly');
+    const setCookies = res.headers['set-cookie'] as string[] | undefined;
+    expect(setCookies?.length).toBeGreaterThanOrEqual(2);
+    expect(String(res.headers['set-cookie']).toLowerCase()).toContain(
+      'httponly',
+    );
+    const csrfSetCookie = setCookies!.find((c) =>
+      /^xsrf-token=/i.test(c.split(';')[0].trim()),
+    );
+    expect(csrfSetCookie).toBeDefined();
+    expect(csrfSetCookie!.toLowerCase()).not.toContain('httponly');
+    expect(csrfSetCookie!.toLowerCase()).toMatch(/path=\/(?:;|$)/);
 
     const createdUser = await dbConnection
       .collection('users')
@@ -145,6 +152,31 @@ describe('Auth E2E', () => {
       .get('/users/me')
       .set('Authorization', `Bearer ${refreshRes.body.accessToken}`)
       .expect(200);
+  });
+
+  it('API-03b: should refresh with X-XSRF-TOKEN and cookies (double-submit / cold start)', async () => {
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        email: 'tc03b@example.com',
+        password: 'password123',
+        name: 'TC03b',
+      })
+      .expect(201);
+
+    const cookieHeader = cookieHeaderFromSetCookie(
+      loginRes.headers['set-cookie'] as string[] | undefined,
+    );
+    const csrf = loginRes.body.csrfToken as string;
+
+    const refreshRes = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', cookieHeader)
+      .set('X-XSRF-TOKEN', csrf)
+      .expect(200);
+
+    expect(refreshRes.body).toHaveProperty('accessToken');
+    expect(refreshRes.body).toHaveProperty('csrfToken');
   });
 
   it('API-04: should reject reuse of rotated refresh token', async () => {

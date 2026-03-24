@@ -21,10 +21,19 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import {
   getClearCookieOptions,
+  getClearCsrfCookieOptions,
+  getCsrfCookieName,
+  getCsrfCookieOptions,
   getRefreshCookieMaxAgeMs,
   getRefreshCookieName,
   getRefreshCookieOptions,
 } from './auth-cookie.config';
+
+function getCsrfHeaderFromRequest(req: Request): string | undefined {
+  const a = req.get('x-csrf-token');
+  const b = req.get('x-xsrf-token');
+  return (a && a.trim()) || (b && b.trim()) || undefined;
+}
 
 @ApiTags('auth')
 @Controller('auth')
@@ -63,6 +72,11 @@ export class AuthController {
       result.refreshToken,
       getRefreshCookieOptions(maxAge),
     );
+    res.cookie(
+      getCsrfCookieName(),
+      result.csrfToken,
+      getCsrfCookieOptions(maxAge),
+    );
     return {
       user: result.user,
       accessToken: result.accessToken,
@@ -89,6 +103,11 @@ export class AuthController {
       result.refreshToken,
       getRefreshCookieOptions(maxAge),
     );
+    res.cookie(
+      getCsrfCookieName(),
+      result.csrfToken,
+      getCsrfCookieOptions(maxAge),
+    );
     return {
       user: result.user,
       accessToken: result.accessToken,
@@ -99,11 +118,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   @ApiOperation({
-    summary: 'Refresh access token (HttpOnly refresh cookie + X-CSRF-Token header)',
+    summary:
+      'Refresh access token (HttpOnly refresh cookie + X-CSRF-Token or X-XSRF-TOKEN header)',
   })
   @ApiHeader({
     name: 'X-CSRF-Token',
-    description: 'CSRF token from last login/register/refresh response body',
+    description:
+      'CSRF token (same as readable CSRF cookie or body `csrfToken`). `X-XSRF-TOKEN` is accepted as an alias.',
     required: true,
   })
   @ApiResponse({
@@ -118,13 +139,25 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const cookie = req.cookies?.[getRefreshCookieName()] as string | undefined;
-    const csrf = req.headers['x-csrf-token'] as string | undefined;
-    const result = await this.authService.refreshTokens(cookie, csrf);
+    const csrfHeader = getCsrfHeaderFromRequest(req);
+    const csrfCookie = req.cookies?.[getCsrfCookieName()] as
+      | string
+      | undefined;
+    const result = await this.authService.refreshTokens(
+      cookie,
+      csrfHeader,
+      csrfCookie,
+    );
     const maxAge = getRefreshCookieMaxAgeMs();
     res.cookie(
       getRefreshCookieName(),
       result.refreshToken,
       getRefreshCookieOptions(maxAge),
+    );
+    res.cookie(
+      getCsrfCookieName(),
+      result.csrfToken,
+      getCsrfCookieOptions(maxAge),
     );
     return {
       accessToken: result.accessToken,
@@ -139,13 +172,18 @@ export class AuthController {
   })
   @ApiHeader({
     name: 'X-CSRF-Token',
-    description: 'CSRF token matching current refresh session',
+    description:
+      'CSRF token matching current refresh session (or `X-XSRF-TOKEN`).',
     required: true,
   })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const cookie = req.cookies?.[getRefreshCookieName()] as string | undefined;
-    const csrf = req.headers['x-csrf-token'] as string | undefined;
-    await this.authService.logout(cookie, csrf);
+    const csrfHeader = getCsrfHeaderFromRequest(req);
+    const csrfCookie = req.cookies?.[getCsrfCookieName()] as
+      | string
+      | undefined;
+    await this.authService.logout(cookie, csrfHeader, csrfCookie);
     res.clearCookie(getRefreshCookieName(), getClearCookieOptions());
+    res.clearCookie(getCsrfCookieName(), getClearCsrfCookieOptions());
   }
 }
