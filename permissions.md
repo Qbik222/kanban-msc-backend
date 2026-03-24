@@ -1,6 +1,14 @@
 # Permissions Model
 
-## Roles
+## Teams
+
+- Team roles: **`admin`**, **`user`** (see `TeamMember`).
+- **`admin`** of a team is treated as having **every board permission** on **all boards** in that team (no `BoardMember` row required).
+- **`user`** of a team only accesses boards where they are **`owner`** or have a **`BoardMember`** row; board roles below (`owner` / `editor` / `viewer`) then apply.
+- Board invites (`POST /boards/:boardId/members`) are allowed only for users who are already members of the **same team** as the board.
+- **`POST /boards`**: body must include **`teamId`**; the guard allows creation only if the caller is **team `admin`** for that `teamId` (in addition to the `board:create` permission flag on the route).
+
+## Board roles
 
 - `owner`: full board administration and content management.
 - `editor`: content management and limited member management.
@@ -38,11 +46,21 @@
 | `member:update_role` | ✅ | ❌ | ❌ |
 | `member:remove` | ✅ | ✅ | ❌ |
 
+The `board:create` row reflects the permission bit used on **`POST /boards`** together with **team admin** checks for `teamId`; board-level roles alone do not grant creating new boards.
+
 ## Endpoint -> Required Permission
+
+### Teams
+
+- `POST /teams` -> authenticated (creator becomes team `admin`)
+- `GET /teams` -> authenticated
+- `POST /teams/:teamId/members` -> team `admin`
+- `PATCH /teams/:teamId/members/:memberUserId/role` -> team `admin`
+- `DELETE /teams/:teamId/members/:memberUserId` -> team `admin`
 
 ### Boards
 
-- `POST /boards` -> `board:create`
+- `POST /boards` -> `board:create` + **team `admin`** for `body.teamId`
 - `GET /boards` -> `board:list`
 - `GET /boards/:id` -> `board:read`
 - `PATCH /boards/:id` -> `board:update`

@@ -7,6 +7,7 @@ import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { setupE2EHttpApp } from './setup-e2e-app';
+import { createBoard, createTeam } from './e2e-teams.helpers';
 
 jest.setTimeout(30000);
 
@@ -50,13 +51,8 @@ describe('Cards E2E', () => {
   ): Promise<{ token: string; boardId: string }> {
     const token = await registerAndLogin(app, email, password, name);
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ title: boardTitle })
-      .expect(201);
-
-    const boardId = boardRes.body.id as string;
+    const teamId = await createTeam(app, token, `Team ${boardTitle}`);
+    const boardId = await createBoard(app, token, boardTitle, teamId);
 
     const joinedPromise = waitForSocketEvent<{ boardId: string }>(socket, 'board:joined');
     socket.emit('joinBoard', { boardId, token });
@@ -208,6 +204,8 @@ describe('Cards E2E', () => {
       await dbConnection.collection('columns').deleteMany({});
       await dbConnection.collection('boards').deleteMany({});
       await dbConnection.collection('boardmembers').deleteMany({});
+      await dbConnection.collection('teammembers').deleteMany({});
+      await dbConnection.collection('teams').deleteMany({});
       await dbConnection.collection('refreshsessions').deleteMany({});
       await dbConnection.collection('users').deleteMany({});
     }

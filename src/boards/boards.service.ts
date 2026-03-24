@@ -87,6 +87,7 @@ export class BoardsService {
       id: this.mapId(board?._id ?? board?.id),
       title: board?.title ?? '',
       ownerId: this.mapId(board?.ownerId),
+      teamId: this.mapId(board?.teamId),
       projectIds: Array.isArray(board?.projectIds)
         ? board.projectIds.map((id: any) => this.mapId(id))
         : [],
@@ -105,9 +106,15 @@ export class BoardsService {
   }
 
   async create(ownerId: string, dto: CreateBoardDto): Promise<BoardResponseDto> {
+    const canCreate = await this.permissionsService.canCreateBoard(ownerId, dto.teamId);
+    if (!canCreate) {
+      throw new ForbiddenException('Only team admins can create boards');
+    }
+
     const board = new this.boardModel({
       title: dto.title,
       ownerId: new Types.ObjectId(ownerId),
+      teamId: new Types.ObjectId(dto.teamId),
       projectIds: (dto.projectIds ?? []).map((id) => new Types.ObjectId(id)),
     });
     const savedBoard = await board.save();

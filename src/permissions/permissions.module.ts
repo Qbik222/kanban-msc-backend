@@ -4,6 +4,7 @@ import { Board, BoardSchema } from '../boards/board.schema';
 import { Card, CardSchema } from '../cards/card.schema';
 import { Column, ColumnSchema } from '../columns/column.schema';
 import { BoardMember, BoardMemberSchema } from './board-member.schema';
+import { TeamMember, TeamMemberSchema } from '../teams/team-member.schema';
 import { PermissionsService } from './permissions.service';
 import { BoardPermissionGuard } from './board-permission.guard';
 
@@ -11,6 +12,7 @@ import { BoardPermissionGuard } from './board-permission.guard';
   imports: [
     MongooseModule.forFeature([
       { name: BoardMember.name, schema: BoardMemberSchema },
+      { name: TeamMember.name, schema: TeamMemberSchema },
       { name: Board.name, schema: BoardSchema },
       { name: Column.name, schema: ColumnSchema },
       { name: Card.name, schema: CardSchema },

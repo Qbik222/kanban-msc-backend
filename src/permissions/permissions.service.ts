@@ -10,6 +10,8 @@ import { Board } from '../boards/board.schema';
 import { Card } from '../cards/card.schema';
 import { Column } from '../columns/column.schema';
 import { BoardMember } from './board-member.schema';
+import { TeamMember } from '../teams/team-member.schema';
+import { TeamRole } from '../teams/team.constants';
 import { BoardRole, Permission, ROLE_PERMISSIONS } from './permissions.constants';
 
 @Injectable()
@@ -17,6 +19,8 @@ export class PermissionsService {
   constructor(
     @InjectModel(BoardMember.name)
     private readonly boardMemberModel: Model<BoardMember>,
+    @InjectModel(TeamMember.name)
+    private readonly teamMemberModel: Model<TeamMember>,
     @InjectModel(Board.name)
     private readonly boardModel: Model<Board>,
     @InjectModel(Column.name)
@@ -32,6 +36,39 @@ export class PermissionsService {
     return new Types.ObjectId(id);
   }
 
+  async canCreateBoard(userId: string, teamId: string): Promise<boolean> {
+    const role = await this.getTeamMembershipRole(userId, teamId);
+    return role === 'admin';
+  }
+
+  private async getTeamMembershipRole(userId: string, teamId: string): Promise<TeamRole | null> {
+    const m = await this.teamMemberModel
+      .findOne({
+        teamId: this.toObjectId(teamId),
+        userId: this.toObjectId(userId),
+        isDeleted: { $ne: true },
+      })
+      .exec();
+    return m?.role ?? null;
+  }
+
+  private async getBoardRoleForTeamUser(
+    userId: string,
+    board: Board,
+  ): Promise<BoardRole | null> {
+    if (board.ownerId.toString() === userId) {
+      return 'owner';
+    }
+
+    const member = await this.boardMemberModel.findOne({
+      boardId: board._id,
+      userId: this.toObjectId(userId),
+      isDeleted: { $ne: true },
+    }).exec();
+
+    return member?.role ?? null;
+  }
+
   private async getRole(userId: string, boardId: string): Promise<BoardRole | null> {
     const boardObjectId = this.toObjectId(boardId);
     const userObjectId = this.toObjectId(userId);
@@ -44,29 +81,54 @@ export class PermissionsService {
       return null;
     }
 
-    if (board.ownerId.toString() === userId) {
-      return 'owner';
-    }
-
-    const member = await this.boardMemberModel.findOne({
-      boardId: boardObjectId,
+    const teamMember = await this.teamMemberModel.findOne({
+      teamId: board.teamId,
       userId: userObjectId,
       isDeleted: { $ne: true },
     }).exec();
 
-    if (member) {
-      return member.role;
+    if (!teamMember) {
+      return null;
     }
 
-    return null;
+    if (teamMember.role === 'admin') {
+      return 'owner';
+    }
+
+    return this.getBoardRoleForTeamUser(userId, board);
   }
 
   async hasPermission(userId: string, boardId: string, permission: Permission): Promise<boolean> {
-    const role = await this.getRole(userId, boardId);
-    if (!role) {
+    const boardObjectId = this.toObjectId(boardId);
+    const userObjectId = this.toObjectId(userId);
+
+    const board = await this.boardModel.findOne({
+      _id: boardObjectId,
+    }).exec();
+
+    if (!board) {
       return false;
     }
-    return ROLE_PERMISSIONS[role].has(permission);
+
+    const teamMember = await this.teamMemberModel.findOne({
+      teamId: board.teamId,
+      userId: userObjectId,
+      isDeleted: { $ne: true },
+    }).exec();
+
+    if (!teamMember) {
+      return false;
+    }
+
+    if (teamMember.role === 'admin') {
+      return true;
+    }
+
+    const boardRole = await this.getBoardRoleForTeamUser(userId, board);
+    if (!boardRole) {
+      return false;
+    }
+    return ROLE_PERMISSIONS[boardRole].has(permission);
   }
 
   async assertPermission(userId: string, boardId: string, permission: Permission): Promise<void> {
@@ -100,20 +162,54 @@ export class PermissionsService {
 
   async getBoardIdsForUser(userId: string): Promise<string[]> {
     const userObjectId = this.toObjectId(userId);
-    const memberships = await this.boardMemberModel.find({
+
+    const teamMemberships = await this.teamMemberModel.find({
+      userId: userObjectId,
+      isDeleted: { $ne: true },
+    }).exec();
+
+    if (teamMemberships.length === 0) {
+      return [];
+    }
+
+    const teamRoleById = new Map<string, TeamRole>();
+    const allTeamIds: Types.ObjectId[] = [];
+    for (const m of teamMemberships) {
+      teamRoleById.set(m.teamId.toString(), m.role);
+      allTeamIds.push(m.teamId);
+    }
+
+    const boardsInTeams = await this.boardModel
+      .find({
+        teamId: { $in: allTeamIds },
+        isDeleted: { $ne: true },
+      })
+      .select({ _id: 1, teamId: 1, ownerId: 1 })
+      .exec();
+
+    const memberRows = await this.boardMemberModel.find({
       userId: userObjectId,
       isDeleted: { $ne: true },
     }).select({ boardId: 1 }).exec();
+    const memberBoardIds = new Set(memberRows.map((r) => r.boardId.toString()));
 
-    const boardIds = new Set<string>(memberships.map((m) => m.boardId.toString()));
+    const result = new Set<string>();
+    for (const b of boardsInTeams) {
+      const tid = b.teamId.toString();
+      const role = teamRoleById.get(tid);
+      if (!role) {
+        continue;
+      }
 
-    const ownerBoards = await this.boardModel.find({
-      ownerId: userObjectId,
-      isDeleted: { $ne: true },
-    }).select({ _id: 1 }).exec();
+      const bid = b._id.toString();
+      if (role === 'admin') {
+        result.add(bid);
+      } else if (b.ownerId.toString() === userId || memberBoardIds.has(bid)) {
+        result.add(bid);
+      }
+    }
 
-    ownerBoards.forEach((b) => boardIds.add(b._id.toString()));
-    return Array.from(boardIds);
+    return Array.from(result);
   }
 
   async ensureOwnerMembership(boardId: string, ownerId: string): Promise<void> {
@@ -139,6 +235,24 @@ export class PermissionsService {
   async inviteMember(boardId: string, invitedByUserId: string, targetUserId: string): Promise<void> {
     const boardObjectId = this.toObjectId(boardId);
     const targetObjectId = this.toObjectId(targetUserId);
+
+    const board = await this.boardModel.findOne({
+      _id: boardObjectId,
+      isDeleted: { $ne: true },
+    }).exec();
+    if (!board) {
+      throw new NotFoundException('Board not found');
+    }
+
+    const targetInTeam = await this.teamMemberModel.findOne({
+      teamId: board.teamId,
+      userId: targetObjectId,
+      isDeleted: { $ne: true },
+    }).exec();
+    if (!targetInTeam) {
+      throw new ForbiddenException('User is not a member of this team');
+    }
+
     const existing = await this.boardMemberModel.findOne({
       boardId: boardObjectId,
       userId: targetObjectId,

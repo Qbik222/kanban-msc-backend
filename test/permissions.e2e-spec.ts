@@ -7,6 +7,12 @@ import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { setupE2EHttpApp } from './setup-e2e-app';
+import {
+  addTeamMember,
+  createBoard,
+  createTeam,
+  setTeamMemberRole,
+} from './e2e-teams.helpers';
 
 jest.setTimeout(30000);
 
@@ -69,6 +75,8 @@ describe('Permissions E2E', () => {
       await dbConnection.collection('columns').deleteMany({});
       await dbConnection.collection('boards').deleteMany({});
       await dbConnection.collection('boardmembers').deleteMany({});
+      await dbConnection.collection('teammembers').deleteMany({});
+      await dbConnection.collection('teams').deleteMany({});
       await dbConnection.collection('refreshsessions').deleteMany({});
       await dbConnection.collection('users').deleteMany({});
     }
@@ -88,16 +96,15 @@ describe('Permissions E2E', () => {
     const editorToken = await registerAndLogin(app, 'perm_editor_1@example.com', 'password123', 'Editor 1');
     const viewerToken = await registerAndLogin(app, 'perm_viewer_1@example.com', 'password123', 'Viewer 1');
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ title: 'Permissions Board 1' })
-      .expect(201);
-    const boardId = boardRes.body.id as string;
-
     const editorUser = await dbConnection.collection('users').findOne({ email: 'perm_editor_1@example.com' });
     const viewerUser = await dbConnection.collection('users').findOne({ email: 'perm_viewer_1@example.com' });
     const ownerUser = await dbConnection.collection('users').findOne({ email: 'perm_owner_1@example.com' });
+
+    const teamId = await createTeam(app, ownerToken, 'Perm team 1');
+    await addTeamMember(app, ownerToken, teamId, String(editorUser?._id));
+    await addTeamMember(app, ownerToken, teamId, String(viewerUser?._id));
+
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board 1', teamId);
     const tokenPayload = JSON.parse(Buffer.from(ownerToken.split('.')[1], 'base64url').toString('utf8'));
     expect(tokenPayload.sub).toBe(String(ownerUser?._id));
 
@@ -152,16 +159,15 @@ describe('Permissions E2E', () => {
     const editorToken = await registerAndLogin(app, 'perm_editor_2@example.com', 'password123', 'Editor 2');
     const viewerToken = await registerAndLogin(app, 'perm_viewer_2@example.com', 'password123', 'Viewer 2');
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ title: 'Permissions Board 2' })
-      .expect(201);
-    const boardId = boardRes.body.id as string;
-
     const editorUser = await dbConnection.collection('users').findOne({ email: 'perm_editor_2@example.com' });
     const viewerUser = await dbConnection.collection('users').findOne({ email: 'perm_viewer_2@example.com' });
     const ownerUser = await dbConnection.collection('users').findOne({ email: 'perm_owner_2@example.com' });
+
+    const teamId = await createTeam(app, ownerToken, 'Perm team 2');
+    await addTeamMember(app, ownerToken, teamId, String(editorUser?._id));
+    await addTeamMember(app, ownerToken, teamId, String(viewerUser?._id));
+
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board 2', teamId);
 
     await request(app.getHttpServer())
       .post(`/boards/${boardId}/members`)
@@ -197,14 +203,12 @@ describe('Permissions E2E', () => {
     const ownerToken = await registerAndLogin(app, 'perm_owner_3@example.com', 'password123', 'Owner 3');
     const editorToken = await registerAndLogin(app, 'perm_editor_3@example.com', 'password123', 'Editor 3');
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ title: 'Permissions Board 3' })
-      .expect(201);
-    const boardId = boardRes.body.id as string;
-
     const editorUser = await dbConnection.collection('users').findOne({ email: 'perm_editor_3@example.com' });
+
+    const teamId = await createTeam(app, ownerToken, 'Perm team 3');
+    await addTeamMember(app, ownerToken, teamId, String(editorUser?._id));
+
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board 3', teamId);
 
     await request(app.getHttpServer())
       .post(`/boards/${boardId}/members`)
@@ -252,16 +256,51 @@ describe('Permissions E2E', () => {
     expect(activeCards[0].order).toBe(0);
   });
 
+  it('team admin can read board without board membership', async () => {
+    const u1Token = await registerAndLogin(app, 'perm_coadmin_a@example.com', 'password123', 'Co A');
+    const u2Token = await registerAndLogin(app, 'perm_coadmin_b@example.com', 'password123', 'Co B');
+
+    const u2 = await dbConnection.collection('users').findOne({ email: 'perm_coadmin_b@example.com' });
+    const teamId = await createTeam(app, u1Token, 'Co team');
+    await addTeamMember(app, u1Token, teamId, String(u2?._id));
+    await setTeamMemberRole(app, u1Token, teamId, String(u2?._id), 'admin');
+
+    const boardId = await createBoard(app, u1Token, 'Co board', teamId);
+
+    await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
+      .set('Authorization', `Bearer ${u2Token}`)
+      .expect(200);
+
+    const u2BoardMember = await dbConnection.collection('boardmembers').findOne({
+      boardId: new Types.ObjectId(boardId),
+      userId: new Types.ObjectId(String(u2?._id)),
+      isDeleted: false,
+    });
+    expect(u2BoardMember).toBeFalsy();
+  });
+
+  it('cannot invite to board a user who is not in the team', async () => {
+    const ownerToken = await registerAndLogin(app, 'perm_teamgate_a@example.com', 'password123', 'Gate A');
+    await registerAndLogin(app, 'perm_teamgate_b@example.com', 'password123', 'Gate B');
+
+    const outsider = await dbConnection.collection('users').findOne({ email: 'perm_teamgate_b@example.com' });
+    const teamId = await createTeam(app, ownerToken, 'Gate team');
+    const boardId = await createBoard(app, ownerToken, 'Gate board', teamId);
+
+    await request(app.getHttpServer())
+      .post(`/boards/${boardId}/members`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ userId: String(outsider?._id) })
+      .expect(403);
+  });
+
   it('outsider cannot join board room via websocket', async () => {
     const ownerToken = await registerAndLogin(app, 'perm_owner_4@example.com', 'password123', 'Owner 4');
     const outsiderToken = await registerAndLogin(app, 'perm_outsider_4@example.com', 'password123', 'Outsider 4');
 
-    const boardRes = await request(app.getHttpServer())
-      .post('/boards')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ title: 'Permissions Board 4' })
-      .expect(201);
-    const boardId = boardRes.body.id as string;
+    const teamId = await createTeam(app, ownerToken, 'Perm team 4');
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board 4', teamId);
 
     const joinError = waitForSocketEvent<{ message: string }>(socket, 'board:join_error');
     socket.emit('joinBoard', { boardId, token: outsiderToken });

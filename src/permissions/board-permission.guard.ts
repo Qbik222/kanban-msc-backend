@@ -63,9 +63,16 @@ export class BoardPermissionGuard implements CanActivate {
     const userId = req?.user?.userId as string | undefined;
     if (!userId) return false;
 
-    // Global-only permissions for authenticated users.
-    if (permissions.includes('board:create') || permissions.includes('board:list')) {
+    if (permissions.includes('board:list')) {
       return true;
+    }
+
+    if (permissions.includes('board:create')) {
+      const teamId = req.body?.teamId as string | undefined;
+      if (!teamId || typeof teamId !== 'string') {
+        return false;
+      }
+      return this.permissionsService.canCreateBoard(userId, teamId);
     }
 
     const boardId = await this.resolveBoardId(req);

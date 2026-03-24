@@ -10,6 +10,9 @@ export class BoardResponseDto {
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1ffff' })
   ownerId!: string;
 
+  @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a000' })
+  teamId!: string;
+
   @ApiProperty({ example: ['65f0b3c3f2b7f6a1e9b1a010', '65f0b3c3f2b7f6a1e9b1a011'], isArray: true })
   projectIds!: string[];
 

@@ -11,6 +11,9 @@ export class Board extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   ownerId!: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Team', required: true, index: true })
+  teamId!: Types.ObjectId;
+
   // ids-only tags/projects attached to this board
   @Prop({ type: [Types.ObjectId], default: [] })
   projectIds!: Types.ObjectId[];

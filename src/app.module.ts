@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { BoardsModule } from './boards/boards.module';
 import { ColumnsModule } from './columns/columns.module';
 import { CardsModule } from './cards/cards.module';
+import { TeamsModule } from './teams/teams.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CardsModule } from './cards/cards.module';
     ),
     UsersModule,
     AuthModule,
+    TeamsModule,
     BoardsModule,
     ColumnsModule,
     CardsModule,
