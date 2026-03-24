@@ -80,6 +80,26 @@ export class TeamsService {
     return teams.map((t) => this.mapTeam(t));
   }
 
+  async findOneForUser(userId: string, teamId: string): Promise<TeamResponseDto> {
+    const role = await this.getTeamRole(userId, teamId);
+    if (role === null) {
+      throw new NotFoundException('Team not found');
+    }
+
+    const team = await this.teamModel
+      .findOne({
+        _id: this.toObjectId(teamId),
+        isDeleted: { $ne: true },
+      })
+      .exec();
+
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+
+    return this.mapTeam(team);
+  }
+
   async getTeamRole(userId: string, teamId: string): Promise<TeamRole | null> {
     const m = await this.teamMemberModel
       .findOne({

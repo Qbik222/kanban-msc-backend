@@ -54,6 +54,7 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 
 - `POST /teams` -> authenticated (creator becomes team `admin`)
 - `GET /teams` -> authenticated
+- `GET /teams/:teamId` -> authenticated member of that team (otherwise 404)
 - `POST /teams/:teamId/members` -> team `admin`
 - `PATCH /teams/:teamId/members/:memberUserId/role` -> team `admin`
 - `DELETE /teams/:teamId/members/:memberUserId` -> team `admin`

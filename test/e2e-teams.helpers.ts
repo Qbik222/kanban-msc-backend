@@ -14,6 +14,16 @@ export async function createTeam(
   return res.body.id as string;
 }
 
+export function getTeam(
+  app: INestApplication,
+  token: string,
+  teamId: string,
+) {
+  return request(app.getHttpServer())
+    .get(`/teams/${teamId}`)
+    .set('Authorization', `Bearer ${token}`);
+}
+
 export async function addTeamMember(
   app: INestApplication,
   adminToken: string,

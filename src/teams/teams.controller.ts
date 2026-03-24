@@ -13,6 +13,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -48,6 +49,18 @@ export class TeamsController {
     @Req() req: { user: { userId: string } },
   ): Promise<TeamResponseDto[]> {
     return this.teamsService.findAllForUser(req.user.userId);
+  }
+
+  @Get(':teamId')
+  @ApiOperation({ summary: 'Get team by id (must be a member)' })
+  @ApiParam({ name: 'teamId', description: 'Team id' })
+  @ApiResponse({ status: 200, type: TeamResponseDto })
+  @ApiResponse({ status: 404, description: 'Team not found or no access' })
+  async findOne(
+    @Req() req: { user: { userId: string } },
+    @Param('teamId') teamId: string,
+  ): Promise<TeamResponseDto> {
+    return this.teamsService.findOneForUser(req.user.userId, teamId);
   }
 
   @Post(':teamId/members')
