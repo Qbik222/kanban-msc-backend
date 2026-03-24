@@ -7,6 +7,7 @@
 - **`user`** of a team only accesses boards where they are **`owner`** or have a **`BoardMember`** row; board roles below (`owner` / `editor` / `viewer`) then apply.
 - Board invites (`POST /boards/:boardId/members`) are allowed only for users who are already members of the **same team** as the board.
 - **`POST /boards`**: body must include **`teamId`**; the guard allows creation only if the caller is **team `admin`** for that `teamId` (in addition to the `board:create` permission flag on the route).
+- Team payloads from **`POST /teams`**, **`GET /teams`**, and **`GET /teams/:teamId`** include **`role`** (`admin` \| `user`) for the authenticated user in that team.
 
 ## Board roles
 

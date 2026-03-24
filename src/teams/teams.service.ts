@@ -30,10 +30,11 @@ export class TeamsService {
     return new Types.ObjectId(id);
   }
 
-  private mapTeam(team: any): TeamResponseDto {
+  private mapTeam(team: any, role: TeamRole): TeamResponseDto {
     return {
       id: String(team?._id ?? team?.id),
       name: team?.name ?? '',
+      role,
       createdBy: String(team?.createdBy),
       isDeleted: Boolean(team?.isDeleted),
       createdAt: team?.createdAt,
@@ -54,17 +55,22 @@ export class TeamsService {
       isDeleted: false,
     });
 
-    return this.mapTeam(team);
+    return this.mapTeam(team, 'admin');
   }
 
   async findAllForUser(userId: string): Promise<TeamResponseDto[]> {
     const userOid = this.toObjectId(userId);
     const memberships = await this.teamMemberModel
       .find({ userId: userOid, isDeleted: { $ne: true } })
-      .select({ teamId: 1 })
+      .select({ teamId: 1, role: 1 })
       .exec();
 
-    const teamIds = memberships.map((m) => m.teamId);
+    const roleByTeamId = new Map<string, TeamRole>();
+    for (const m of memberships) {
+      roleByTeamId.set(m.teamId.toString(), m.role);
+    }
+
+    const teamIds = Array.from(roleByTeamId.keys()).map((id) => new Types.ObjectId(id));
     if (teamIds.length === 0) {
       return [];
     }
@@ -77,7 +83,9 @@ export class TeamsService {
       .sort({ updatedAt: -1 })
       .exec();
 
-    return teams.map((t) => this.mapTeam(t));
+    return teams.map((t) =>
+      this.mapTeam(t, roleByTeamId.get(t._id.toString())!),
+    );
   }
 
   async findOneForUser(userId: string, teamId: string): Promise<TeamResponseDto> {
@@ -97,7 +105,7 @@ export class TeamsService {
       throw new NotFoundException('Team not found');
     }
 
-    return this.mapTeam(team);
+    return this.mapTeam(team, role);
   }
 
   async getTeamRole(userId: string, teamId: string): Promise<TeamRole | null> {

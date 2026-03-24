@@ -5,7 +5,7 @@ import { Connection } from 'mongoose';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { setupE2EHttpApp } from './setup-e2e-app';
-import { createTeam, getTeam } from './e2e-teams.helpers';
+import { addTeamMember, createTeam, getTeam } from './e2e-teams.helpers';
 
 jest.setTimeout(30000);
 
@@ -72,6 +72,40 @@ describe('Teams E2E', () => {
     const res = await getTeam(app, token, teamId).expect(200);
     expect(res.body.id).toBe(teamId);
     expect(res.body.name).toBe('Alpha');
+    expect(res.body.role).toBe('admin');
+  });
+
+  it('GET /teams returns role for each team', async () => {
+    const token = await registerAndLogin(app, 'teams_list_1@example.com', 'password123', 'Teams List 1');
+    const teamId = await createTeam(app, token, 'Listed');
+
+    const res = await request(app.getHttpServer())
+      .get('/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(teamId);
+    expect(res.body[0].role).toBe('admin');
+  });
+
+  it('GET /teams shows role user for invited member', async () => {
+    const adminToken = await registerAndLogin(app, 'teams_role_a@example.com', 'password123', 'Teams Role A');
+    const memberToken = await registerAndLogin(app, 'teams_role_b@example.com', 'password123', 'Teams Role B');
+
+    const memberUser = await dbConnection.collection('users').findOne({ email: 'teams_role_b@example.com' });
+    const teamId = await createTeam(app, adminToken, 'Shared');
+    await addTeamMember(app, adminToken, teamId, String(memberUser?._id));
+
+    const res = await request(app.getHttpServer())
+      .get('/teams')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(teamId);
+    expect(res.body[0].role).toBe('user');
   });
 
   it('GET /teams/:teamId returns 404 for non-member', async () => {
