@@ -12,6 +12,8 @@ import { BoardResponseDto } from './dto/board-response.dto';
 import { BoardDetailsResponseDto } from './dto/board-details-response.dto';
 import { ColumnResponseDto } from './dto/column-response.dto';
 import { CardResponseDto } from './dto/card-response.dto';
+import { BoardMember } from '../permissions/board-member.schema';
+import { BoardMemberResponseDto } from './dto/board-member-response.dto';
 import { PermissionsService } from '../permissions/permissions.service';
 
 @Injectable()
@@ -19,6 +21,8 @@ export class BoardsService {
   constructor(
     @InjectModel(Board.name)
     private readonly boardModel: Model<Board>,
+    @InjectModel(BoardMember.name)
+    private readonly boardMemberModel: Model<BoardMember>,
     private readonly permissionsService: PermissionsService,
   ) {}
 
@@ -205,6 +209,29 @@ export class BoardsService {
     }
 
     return this.toBoardResponse(board);
+  }
+
+  async listMembersForBoard(
+    actorUserId: string,
+    boardId: string,
+  ): Promise<BoardMemberResponseDto[]> {
+    // Membership check: only board members can view the members list.
+    await this.permissionsService.assertPermission(actorUserId, boardId, 'board:read');
+
+    const members = await this.boardMemberModel
+      .find({ boardId: new Types.ObjectId(boardId), isDeleted: { $ne: true } })
+      .populate('userId', 'email name')
+      .exec();
+
+    return members.map((m: any) => {
+      const user = m.userId;
+      return {
+        id: this.mapId(user?._id ?? user?.id ?? ''),
+        email: String(user?.email ?? ''),
+        name: String(user?.name ?? ''),
+        role: m.role,
+      } satisfies BoardMemberResponseDto;
+    });
   }
 
   async inviteMember(boardId: string, actorUserId: string, targetUserId: string): Promise<void> {

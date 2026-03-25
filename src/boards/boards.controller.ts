@@ -26,6 +26,7 @@ import { BoardDetailsResponseDto } from './dto/board-details-response.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { BoardPermissionGuard, RequirePermissions } from '../permissions';
+import { BoardMemberResponseDto } from './dto/board-member-response.dto';
 
 @ApiTags('boards')
 @Controller('boards')
@@ -106,6 +107,19 @@ export class BoardsController {
     const board = await this.boardsService.remove(id, req.user.userId);
     this.eventsGateway.emitBoardDeleted(board);
     return board;
+  }
+
+  @Get(':boardId/members')
+  @ApiOperation({ summary: 'List board members (must be a member)' })
+  @ApiResponse({ status: 200, type: BoardMemberResponseDto, isArray: true })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Board not found or no access' })
+  @RequirePermissions('board:read')
+  async listMembers(
+    @Req() req: { user: { userId: string } },
+    @Param('boardId') boardId: string,
+  ): Promise<BoardMemberResponseDto[]> {
+    return this.boardsService.listMembersForBoard(req.user.userId, boardId);
   }
 
   @Post(':boardId/members')

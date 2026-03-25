@@ -7,6 +7,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { UsersService } from '../users/users.service';
+import { Board } from '../boards/board.schema';
+import { BoardMember } from '../permissions/board-member.schema';
 import { Team } from './team.schema';
 import { TeamMember } from './team-member.schema';
 import { CreateTeamDto } from './dto/create-team.dto';
@@ -22,6 +24,10 @@ export class TeamsService {
     private readonly teamModel: Model<Team>,
     @InjectModel(TeamMember.name)
     private readonly teamMemberModel: Model<TeamMember>,
+    @InjectModel(Board.name)
+    private readonly boardModel: Model<Board>,
+    @InjectModel(BoardMember.name)
+    private readonly boardMemberModel: Model<BoardMember>,
     private readonly usersService: UsersService,
   ) {}
 
@@ -136,13 +142,99 @@ export class TeamsService {
       .populate('userId', 'email name')
       .exec();
 
+    if (members.length === 0) {
+      return [];
+    }
+
+    const teamOid = this.toObjectId(teamId);
+
+    // Collect all active boards for this team, then assign which of them
+    // each member can access:
+    // - team admin => all team boards (matches permissions logic)
+    // - other roles => boards where user is owner or has BoardMember row
+    const teamBoards = await this.boardModel
+      .find({ teamId: teamOid, isDeleted: false })
+      .select({ _id: 1, title: 1, ownerId: 1 })
+      .sort({ updatedAt: -1 })
+      .exec();
+
+    const boardIdToRef = new Map<string, { id: string; title: string }>();
+    const ownerBoardIdsByUser = new Map<string, Set<string>>();
+    const boardOids = teamBoards.map((b) => b._id);
+
+    for (const b of teamBoards) {
+      const bid = b._id.toString();
+      boardIdToRef.set(bid, { id: bid, title: String(b.title ?? '') });
+
+      const ownerKey = b.ownerId?.toString() ?? '';
+      if (!ownerBoardIdsByUser.has(ownerKey)) {
+        ownerBoardIdsByUser.set(ownerKey, new Set());
+      }
+      ownerBoardIdsByUser.get(ownerKey)!.add(bid);
+    }
+
+    const memberUserIds = members
+      .map((m: any) => m.userId?._id?.toString() ?? m.userId?.id?.toString() ?? '')
+      .filter((id: string) => Boolean(id));
+
+    const boardMemberBoardIdsByUser = new Map<string, Set<string>>();
+
+    if (boardOids.length > 0 && memberUserIds.length > 0) {
+      const boardMemberRows = await this.boardMemberModel
+        .find({
+          boardId: { $in: boardOids },
+          userId: { $in: memberUserIds.map((id) => new Types.ObjectId(id)) },
+          isDeleted: { $ne: true },
+        })
+        .select({ boardId: 1, userId: 1 })
+        .exec();
+
+      for (const row of boardMemberRows) {
+        const uid = row.userId.toString();
+        const bid = row.boardId.toString();
+        if (!boardMemberBoardIdsByUser.has(uid)) {
+          boardMemberBoardIdsByUser.set(uid, new Set());
+        }
+        boardMemberBoardIdsByUser.get(uid)!.add(bid);
+      }
+    }
+
     return members.map((m: any) => {
       const user = m.userId;
+      const userId = String(user?.id ?? user?._id ?? '');
+
+      const isTeamAdmin = m.role === 'admin';
+      let boardRefs: { id: string; title: string }[] = [];
+
+      if (isTeamAdmin) {
+        boardRefs = teamBoards.map((b) => ({
+          id: b._id.toString(),
+          title: String(b.title ?? ''),
+        }));
+      } else {
+        const boardIds = new Set<string>();
+
+        for (const bid of ownerBoardIdsByUser.get(userId) ?? []) {
+          boardIds.add(bid);
+        }
+
+        for (const bid of boardMemberBoardIdsByUser.get(userId) ?? []) {
+          boardIds.add(bid);
+        }
+
+        boardRefs = Array.from(boardIds)
+          .map((bid) => boardIdToRef.get(bid))
+          .filter(
+            (ref): ref is { id: string; title: string } => ref !== undefined,
+          );
+      }
+
       return {
-        id: String(user?.id ?? user?._id ?? ''),
+        id: userId,
         email: String(user?.email ?? ''),
         name: String(user?.name ?? ''),
         role: m.role,
+        boards: boardRefs,
       } satisfies TeamMemberResponseDto;
     });
   }
