@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TeamsService } from './teams.service';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
+import { TeamMemberResponseDto } from './dto/team-member-response.dto';
 import { InviteTeamMemberDto } from './dto/invite-team-member.dto';
 import { UpdateTeamMemberRoleDto } from './dto/update-team-member-role.dto';
 
@@ -61,6 +62,18 @@ export class TeamsController {
     @Param('teamId') teamId: string,
   ): Promise<TeamResponseDto> {
     return this.teamsService.findOneForUser(req.user.userId, teamId);
+  }
+
+  @Get(':teamId/members')
+  @ApiOperation({ summary: 'List team members (must be a member)' })
+  @ApiParam({ name: 'teamId', description: 'Team id' })
+  @ApiResponse({ status: 200, type: TeamMemberResponseDto, isArray: true })
+  @ApiResponse({ status: 404, description: 'Team not found or no access' })
+  async listMembers(
+    @Req() req: { user: { userId: string } },
+    @Param('teamId') teamId: string,
+  ): Promise<TeamMemberResponseDto[]> {
+    return this.teamsService.listMembersForTeam(req.user.userId, teamId);
   }
 
   @Post(':teamId/members')

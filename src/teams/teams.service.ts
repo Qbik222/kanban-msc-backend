@@ -11,6 +11,7 @@ import { Team } from './team.schema';
 import { TeamMember } from './team-member.schema';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
+import { TeamMemberResponseDto } from './dto/team-member-response.dto';
 import { TeamRole } from './team.constants';
 
 @Injectable()
@@ -117,6 +118,32 @@ export class TeamsService {
       })
       .exec();
     return m?.role ?? null;
+  }
+
+  async listMembersForTeam(
+    actorUserId: string,
+    teamId: string,
+  ): Promise<TeamMemberResponseDto[]> {
+    // Membership check: only team members can view the members list.
+    const actorRole = await this.getTeamRole(actorUserId, teamId);
+    if (actorRole === null) {
+      throw new NotFoundException('Team not found');
+    }
+
+    const members = await this.teamMemberModel
+      .find({ teamId: this.toObjectId(teamId), isDeleted: { $ne: true } })
+      .populate('userId', 'email name')
+      .exec();
+
+    return members.map((m: any) => {
+      const user = m.userId;
+      return {
+        id: String(user?.id ?? user?._id ?? ''),
+        email: String(user?.email ?? ''),
+        name: String(user?.name ?? ''),
+        role: m.role,
+      } satisfies TeamMemberResponseDto;
+    });
   }
 
   async assertTeamAdmin(userId: string, teamId: string): Promise<void> {
