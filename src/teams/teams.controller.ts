@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Req,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,10 @@ import { CreateTeamDto } from './dto/create-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
 import { TeamMemberResponseDto } from './dto/team-member-response.dto';
 import { InviteTeamMemberDto } from './dto/invite-team-member.dto';
+import {
+  InviteTeamMemberCandidateDto,
+  InviteTeamMemberSearchQueryDto,
+} from './dto/invite-team-member-search.dto';
 import { UpdateTeamMemberRoleDto } from './dto/update-team-member-role.dto';
 
 @ApiTags('teams')
@@ -74,6 +79,26 @@ export class TeamsController {
     @Param('teamId') teamId: string,
   ): Promise<TeamMemberResponseDto[]> {
     return this.teamsService.listMembersForTeam(req.user.userId, teamId);
+  }
+
+  @Get(':teamId/invite-search')
+  @ApiOperation({ summary: 'Search users that can be invited to the team' })
+  @ApiResponse({
+    status: 200,
+    type: InviteTeamMemberCandidateDto,
+    isArray: true,
+  })
+  async searchInviteCandidates(
+    @Req() req: { user: { userId: string } },
+    @Param('teamId') teamId: string,
+    @Query() queryDto: InviteTeamMemberSearchQueryDto,
+  ): Promise<InviteTeamMemberCandidateDto[]> {
+    return this.teamsService.searchInviteCandidates(
+      teamId,
+      req.user.userId,
+      queryDto.query,
+      queryDto.limit,
+    );
   }
 
   @Post(':teamId/members')

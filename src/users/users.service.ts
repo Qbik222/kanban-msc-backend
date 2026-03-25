@@ -12,6 +12,11 @@ export class UsersService {
     private readonly userModel: Model<User>,
   ) {}
 
+  private escapeRegExp(value: string): string {
+    // Escapes regex special characters so user input is treated as a plain substring.
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   async createUser(dto: CreateUserDto): Promise<User> {
     const existing = await this.userModel.findOne({ email: dto.email.toLowerCase() }).exec();
     if (existing) {
@@ -38,6 +43,27 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async searchByEmailContains(
+    query: string,
+    limit = 10,
+  ): Promise<Array<{ id: string; email: string; name: string }>> {
+    const escaped = this.escapeRegExp(query);
+
+    const users = await this.userModel
+      .find({
+        email: { $regex: escaped, $options: 'i' },
+      })
+      .limit(limit)
+      .select({ email: 1, name: 1 })
+      .exec();
+
+    return users.map((u: User) => ({
+      id: String(u._id),
+      email: String(u.email),
+      name: String(u.name),
+    }));
   }
 }
 

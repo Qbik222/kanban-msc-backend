@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { INestApplication } from '@nestjs/common';
-import { Connection } from 'mongoose';
+import { Connection, Types } from 'mongoose';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { setupE2EHttpApp } from './setup-e2e-app';
@@ -106,6 +106,104 @@ describe('Teams E2E', () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].id).toBe(teamId);
     expect(res.body[0].role).toBe('user');
+  });
+
+  it('GET /teams/:teamId/invite-search excludes active team members', async () => {
+    const adminToken = await registerAndLogin(
+      app,
+      'teams_invite_search_admin_a@example.com',
+      'password123',
+      'Admin A',
+    );
+    await registerAndLogin(
+      app,
+      'teams_invite_search_yurii_active@example.com',
+      'password123',
+      'Yurii Active',
+    );
+
+    const memberUser = await dbConnection
+      .collection('users')
+      .findOne({ email: 'teams_invite_search_yurii_active@example.com' });
+    expect(memberUser).toBeTruthy();
+
+    const teamId = await createTeam(app, adminToken, 'Invite Search Team');
+    await addTeamMember(app, adminToken, teamId, String(memberUser!._id));
+
+    const res = await request(app.getHttpServer())
+      .get(`/teams/${teamId}/invite-search?query=yurii`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const ids = res.body.map((x: any) => x.id);
+    expect(ids).not.toContain(String(memberUser!._id));
+  });
+
+  it('GET /teams/:teamId/invite-search includes soft-deleted members (reactivation)', async () => {
+    const adminToken = await registerAndLogin(
+      app,
+      'teams_invite_search_admin_b@example.com',
+      'password123',
+      'Admin B',
+    );
+    await registerAndLogin(
+      app,
+      'teams_invite_search_yurii_soft@example.com',
+      'password123',
+      'Yurii Soft',
+    );
+
+    const memberUser = await dbConnection
+      .collection('users')
+      .findOne({ email: 'teams_invite_search_yurii_soft@example.com' });
+    expect(memberUser).toBeTruthy();
+
+    const teamId = await createTeam(app, adminToken, 'Invite Search Team Soft');
+    await addTeamMember(app, adminToken, teamId, String(memberUser!._id));
+
+    await dbConnection.collection('teammembers').updateOne(
+      {
+        teamId: new Types.ObjectId(teamId),
+        userId: new Types.ObjectId(String(memberUser!._id)),
+      },
+      { $set: { isDeleted: true } },
+    );
+
+    const res = await request(app.getHttpServer())
+      .get(`/teams/${teamId}/invite-search?query=yurii`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const ids = res.body.map((x: any) => x.id);
+    expect(ids).toContain(String(memberUser!._id));
+  });
+
+  it('GET /teams/:teamId/invite-search returns 403 for non-admin', async () => {
+    const adminToken = await registerAndLogin(
+      app,
+      'teams_invite_search_admin_c@example.com',
+      'password123',
+      'Admin C',
+    );
+    const userToken = await registerAndLogin(
+      app,
+      'teams_invite_search_user_nonadmin@example.com',
+      'password123',
+      'User NonAdmin',
+    );
+
+    const userUser = await dbConnection
+      .collection('users')
+      .findOne({ email: 'teams_invite_search_user_nonadmin@example.com' });
+    expect(userUser).toBeTruthy();
+
+    const teamId = await createTeam(app, adminToken, 'Invite Search Team NonAdmin');
+    await addTeamMember(app, adminToken, teamId, String(userUser!._id));
+
+    await request(app.getHttpServer())
+      .get(`/teams/${teamId}/invite-search?query=te`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(403);
   });
 
   it('GET /teams/:teamId returns 404 for non-member', async () => {

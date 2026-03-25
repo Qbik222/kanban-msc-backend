@@ -12,6 +12,7 @@ import { TeamMember } from './team-member.schema';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
 import { TeamMemberResponseDto } from './dto/team-member-response.dto';
+import { InviteTeamMemberCandidateDto } from './dto/invite-team-member-search.dto';
 import { TeamRole } from './team.constants';
 
 @Injectable()
@@ -178,6 +179,38 @@ export class TeamsService {
       },
       { upsert: true },
     ).exec();
+  }
+
+  async searchInviteCandidates(
+    teamId: string,
+    actorUserId: string,
+    query: string,
+    limit = 10,
+  ): Promise<InviteTeamMemberCandidateDto[]> {
+    await this.assertTeamAdmin(actorUserId, teamId);
+
+    const candidates = await this.usersService.searchByEmailContains(query, limit);
+    if (candidates.length === 0) return [];
+
+    const teamOid = this.toObjectId(teamId);
+    const candidateOids = candidates.map((c) => this.toObjectId(c.id));
+
+    // Exclude only active members (isDeleted != true).
+    // Users with only soft-deleted membership (isDeleted=true) are allowed for re-invite.
+    const activeMembers = await this.teamMemberModel
+      .find({
+        teamId: teamOid,
+        userId: { $in: candidateOids },
+        isDeleted: { $ne: true },
+      })
+      .select({ userId: 1 })
+      .exec();
+
+    const activeUserIds = new Set(activeMembers.map((m) => String(m.userId)));
+
+    return candidates.filter(
+      (c) => c.id !== actorUserId && !activeUserIds.has(c.id),
+    );
   }
 
   async updateMemberRole(
