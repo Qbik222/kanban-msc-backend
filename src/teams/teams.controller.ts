@@ -21,6 +21,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TeamsService } from './teams.service';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { UpdateTeamDto } from './dto/update-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
 import { TeamMemberResponseDto } from './dto/team-member-response.dto';
 import { InviteTeamMemberDto } from './dto/invite-team-member.dto';
@@ -67,6 +68,20 @@ export class TeamsController {
     @Param('teamId') teamId: string,
   ): Promise<TeamResponseDto> {
     return this.teamsService.findOneForUser(req.user.userId, teamId);
+  }
+
+  @Patch(':teamId')
+  @ApiOperation({ summary: 'Rename a team (admin only)' })
+  @ApiParam({ name: 'teamId', description: 'Team id' })
+  @ApiBody({ type: UpdateTeamDto })
+  @ApiResponse({ status: 200, type: TeamResponseDto })
+  @ApiResponse({ status: 404, description: 'Team not found' })
+  async update(
+    @Req() req: { user: { userId: string } },
+    @Param('teamId') teamId: string,
+    @Body() dto: UpdateTeamDto,
+  ): Promise<TeamResponseDto> {
+    return this.teamsService.update(teamId, req.user.userId, dto);
   }
 
   @Get(':teamId/members')

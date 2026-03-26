@@ -12,6 +12,7 @@ import { BoardMember } from '../permissions/board-member.schema';
 import { Team } from './team.schema';
 import { TeamMember } from './team-member.schema';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { UpdateTeamDto } from './dto/update-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
 import { TeamMemberResponseDto } from './dto/team-member-response.dto';
 import { InviteTeamMemberCandidateDto } from './dto/invite-team-member-search.dto';
@@ -114,6 +115,28 @@ export class TeamsService {
     }
 
     return this.mapTeam(team, role);
+  }
+
+  async update(
+    teamId: string,
+    actorUserId: string,
+    dto: UpdateTeamDto,
+  ): Promise<TeamResponseDto> {
+    await this.assertTeamAdmin(actorUserId, teamId);
+
+    const team = await this.teamModel
+      .findOneAndUpdate(
+        { _id: this.toObjectId(teamId), isDeleted: { $ne: true } },
+        { $set: { name: dto.name.trim() } },
+        { new: true },
+      )
+      .exec();
+
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+
+    return this.mapTeam(team, 'admin');
   }
 
   async getTeamRole(userId: string, teamId: string): Promise<TeamRole | null> {
