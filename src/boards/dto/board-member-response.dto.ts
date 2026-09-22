@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BOARD_ROLES, BoardRole } from '../../permissions';
 
 export class BoardMemberResponseDto {
@@ -10,6 +10,9 @@ export class BoardMemberResponseDto {
 
   @ApiProperty({ example: 'User Name' })
   name!: string;
+
+  @ApiPropertyOptional({ example: 'https://example.com/avatar.png' })
+  avatarUrl?: string;
 
   @ApiProperty({ enum: BOARD_ROLES, example: 'viewer' })
   role!: BoardRole;

@@ -179,7 +179,7 @@ export class BoardsService {
 
     const members = await this.boardMemberModel
       .find({ boardId: new Types.ObjectId(boardId), isDeleted: { $ne: true } })
-      .populate('userId', 'email name')
+      .populate('userId', 'email name avatarUrl')
       .exec();
 
     return members.map((m: any) => {
@@ -188,6 +188,7 @@ export class BoardsService {
         id: this.mapId(user?._id ?? user?.id ?? ''),
         email: String(user?.email ?? ''),
         name: String(user?.name ?? ''),
+        avatarUrl: user?.avatarUrl ? String(user.avatarUrl) : undefined,
         role: m.role,
       } satisfies BoardMemberResponseDto;
     });

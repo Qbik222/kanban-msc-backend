@@ -687,7 +687,7 @@ describe('Cards E2E', () => {
     expect(ws.comments[0].text).toBe('Edited text');
   });
 
-  it('API-29: PATCH card description/assignee/deadline => GET activity + ws card:activity', async () => {
+  it('API-29: PATCH card description/assignee/deadline/priority => GET activity + ws card:activity', async () => {
     const { token, boardId } = await setupUserBoardAndJoin(
       'tc_cards_activity@example.com',
       'password123',
@@ -714,6 +714,7 @@ describe('Cards E2E', () => {
       .send({
         description: 'New description',
         assigneeId: myId,
+        priority: 'high',
         deadline: {
           startDate: '2026-04-01T09:00:00.000Z',
           endDate: '2026-04-02T09:00:00.000Z',
@@ -722,7 +723,7 @@ describe('Cards E2E', () => {
       .expect(200);
     const activityWs = await activityWsP;
     expect(activityWs.cardId).toBe(card.cardId);
-    expect(activityWs.items.length).toBeGreaterThanOrEqual(3);
+    expect(activityWs.items.length).toBeGreaterThanOrEqual(4);
 
     await request(app.getHttpServer())
       .patch(`/cards/${card.cardId}`)
@@ -738,7 +739,12 @@ describe('Cards E2E', () => {
     expect(activity.body.cardId).toBe(card.cardId);
     const types = activity.body.items.map((i: any) => i.type);
     expect(types).toEqual(
-      expect.arrayContaining(['description_changed', 'assignee_changed', 'deadline_changed']),
+      expect.arrayContaining([
+        'description_changed',
+        'assignee_changed',
+        'deadline_changed',
+        'priority_changed',
+      ]),
     );
     expect(types).not.toContain('title_changed');
 
@@ -746,6 +752,10 @@ describe('Cards E2E', () => {
     expect(desc.description.from).toBe('Old description');
     expect(desc.description.to).toBe('New description');
     expect(desc.actorId).toBe(myId);
+
+    const priority = activity.body.items.find((i: any) => i.type === 'priority_changed');
+    expect(priority.priority.from).toBe('medium');
+    expect(priority.priority.to).toBe('high');
 
     const activityWs2P = waitForSocketEvent<any>(socket, 'card:activity');
     await request(app.getHttpServer())

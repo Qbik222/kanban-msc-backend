@@ -141,6 +141,13 @@ export class CardsService {
       };
     }
 
+    if (type === 'priority_changed' && entry?.priority) {
+      base.priority = {
+        from: entry.priority.from ?? 'medium',
+        to: entry.priority.to ?? 'medium',
+      };
+    }
+
     return base;
   }
 
@@ -220,6 +227,19 @@ export class CardsService {
               : null,
             to: toDeadline,
           },
+        });
+      }
+    }
+
+    if (dto.priority !== undefined) {
+      const from = (existing.priority ?? 'medium') as 'low' | 'medium' | 'high';
+      const to = dto.priority;
+      if (from !== to) {
+        entries.push({
+          type: 'priority_changed',
+          actorId: actorOid,
+          createdAt: now,
+          priority: { from, to },
         });
       }
     }

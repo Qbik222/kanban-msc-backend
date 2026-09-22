@@ -32,15 +32,23 @@ export class CardActivityDescriptionPayloadDto {
   to!: string;
 }
 
+export class CardActivityPriorityPayloadDto {
+  @ApiProperty({ example: 'medium', enum: ['low', 'medium', 'high'] })
+  from!: 'low' | 'medium' | 'high';
+
+  @ApiProperty({ example: 'high', enum: ['low', 'medium', 'high'] })
+  to!: 'low' | 'medium' | 'high';
+}
+
 export class CardActivityEntryDto {
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a111' })
   _id!: string;
 
   @ApiProperty({
-    enum: ['deadline_changed', 'assignee_changed', 'description_changed'],
+    enum: ['deadline_changed', 'assignee_changed', 'description_changed', 'priority_changed'],
     example: 'description_changed',
   })
-  type!: 'deadline_changed' | 'assignee_changed' | 'description_changed';
+  type!: 'deadline_changed' | 'assignee_changed' | 'description_changed' | 'priority_changed';
 
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a222' })
   actorId!: string;
@@ -56,6 +64,9 @@ export class CardActivityEntryDto {
 
   @ApiPropertyOptional({ type: CardActivityDescriptionPayloadDto })
   description?: CardActivityDescriptionPayloadDto;
+
+  @ApiPropertyOptional({ type: CardActivityPriorityPayloadDto })
+  priority?: CardActivityPriorityPayloadDto;
 }
 
 export class CardActivityResponseDto {

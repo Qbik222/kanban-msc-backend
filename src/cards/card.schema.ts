@@ -4,7 +4,8 @@ import { Document, Types } from 'mongoose';
 export type CardActivityType =
   | 'deadline_changed'
   | 'assignee_changed'
-  | 'description_changed';
+  | 'description_changed'
+  | 'priority_changed';
 
 @Schema({
   timestamps: true,
@@ -82,7 +83,7 @@ export class Card extends Document {
       {
         type: {
           type: String,
-          enum: ['deadline_changed', 'assignee_changed', 'description_changed'],
+          enum: ['deadline_changed', 'assignee_changed', 'description_changed', 'priority_changed'],
           required: true,
         },
         actorId: { type: Types.ObjectId, ref: 'User', required: true },
@@ -125,6 +126,14 @@ export class Card extends Document {
           _id: false,
           required: false,
         },
+        priority: {
+          type: {
+            from: { type: String, enum: ['low', 'medium', 'high'], required: true },
+            to: { type: String, enum: ['low', 'medium', 'high'], required: true },
+          },
+          _id: false,
+          required: false,
+        },
       },
     ],
     default: [],
@@ -145,6 +154,10 @@ export class Card extends Document {
     description?: {
       from: string;
       to: string;
+    };
+    priority?: {
+      from: 'low' | 'medium' | 'high';
+      to: 'low' | 'medium' | 'high';
     };
   }>;
 
