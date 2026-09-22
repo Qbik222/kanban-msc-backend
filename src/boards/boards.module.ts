@@ -6,11 +6,13 @@ import { Card, CardSchema } from '../cards/card.schema';
 import { BoardsController, BoardsService } from './index';
 import { EventsModule } from '../events/events.module';
 import { PermissionsModule } from '../permissions';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     EventsModule,
     PermissionsModule,
+    UsersModule,
     MongooseModule.forFeature([
       { name: Board.name, schema: BoardSchema },
       { name: Column.name, schema: ColumnSchema },

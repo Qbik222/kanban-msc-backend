@@ -498,6 +498,37 @@ describe('Cards E2E', () => {
     const { wsPayload } = await addCommentAndWait(token, card.cardId, 'Looks good!');
     expect(wsPayload.comments).toHaveLength(1);
     expect(wsPayload.comments[0].text).toBe('Looks good!');
+    expect(wsPayload.comments[0].author).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        name: 'TC Cards 11',
+      }),
+    );
+    expect(wsPayload.comments[0].authorId).toBe(wsPayload.comments[0].author.id);
+  });
+
+  it('API-21b: POST reply with parentCommentId', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_reply@example.com',
+      'password123',
+      'TC Cards Reply',
+      'Board for cards e2e (API-21b reply)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'Reply card', description: 'D' });
+    const parent = await addCommentAndWait(token, card.cardId, 'Parent');
+    const parentId = parent.httpBody.comments[0]._id as string;
+
+    const replyRes = await request(app.getHttpServer())
+      .post(`/cards/${card.cardId}/comments`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'Child reply', parentCommentId: parentId })
+      .expect(201);
+
+    const reply = replyRes.body.comments.find((c: any) => c.text === 'Child reply');
+    expect(reply.parentCommentId).toBe(parentId);
+    expect(reply.author.name).toBe('TC Cards Reply');
   });
 
   it('API-22: DELETE /cards/:id/comments/:commentId => ws card:updated (comments cleared)', async () => {
@@ -628,6 +659,104 @@ describe('Cards E2E', () => {
       .post(`/cards/${card.cardId}/restore`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
+  });
+
+  it('API-28: PATCH /cards/:id/comments/:commentId => ws comment:updated', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_comment_edit@example.com',
+      'password123',
+      'TC Cards Comment Edit',
+      'Board for cards e2e (API-28 comment edit)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'With comment', description: 'D' });
+    const { httpBody } = await addCommentAndWait(token, card.cardId, 'Original');
+    const commentId = httpBody.comments?.[0]?._id as string;
+    expect(commentId).toBeTruthy();
+
+    const updatedP = waitForSocketEvent<any>(socket, 'comment:updated');
+    const res = await request(app.getHttpServer())
+      .patch(`/cards/${card.cardId}/comments/${commentId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'Edited text' })
+      .expect(200);
+    const ws = await updatedP;
+
+    expect(res.body.comments[0].text).toBe('Edited text');
+    expect(ws.comments[0].text).toBe('Edited text');
+  });
+
+  it('API-29: PATCH card description/assignee/deadline => GET activity + ws card:activity', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_activity@example.com',
+      'password123',
+      'TC Cards Activity',
+      'Board for cards e2e (API-29 activity)',
+    );
+
+    const me = await request(app.getHttpServer())
+      .get('/users/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const myId = me.body.id as string;
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, {
+      title: 'Activity card',
+      description: 'Old description',
+    });
+
+    const activityWsP = waitForSocketEvent<any>(socket, 'card:activity');
+    await request(app.getHttpServer())
+      .patch(`/cards/${card.cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        description: 'New description',
+        assigneeId: myId,
+        deadline: {
+          startDate: '2026-04-01T09:00:00.000Z',
+          endDate: '2026-04-02T09:00:00.000Z',
+        },
+      })
+      .expect(200);
+    const activityWs = await activityWsP;
+    expect(activityWs.cardId).toBe(card.cardId);
+    expect(activityWs.items.length).toBeGreaterThanOrEqual(3);
+
+    await request(app.getHttpServer())
+      .patch(`/cards/${card.cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Only title change' })
+      .expect(200);
+
+    const activity = await request(app.getHttpServer())
+      .get(`/cards/${card.cardId}/activity`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(activity.body.cardId).toBe(card.cardId);
+    const types = activity.body.items.map((i: any) => i.type);
+    expect(types).toEqual(
+      expect.arrayContaining(['description_changed', 'assignee_changed', 'deadline_changed']),
+    );
+    expect(types).not.toContain('title_changed');
+
+    const desc = activity.body.items.find((i: any) => i.type === 'description_changed');
+    expect(desc.description.from).toBe('Old description');
+    expect(desc.description.to).toBe('New description');
+    expect(desc.actorId).toBe(myId);
+
+    const activityWs2P = waitForSocketEvent<any>(socket, 'card:activity');
+    await request(app.getHttpServer())
+      .patch(`/cards/${card.cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ assigneeId: null })
+      .expect(200);
+    const activityWs2 = await activityWs2P;
+    expect(activityWs2.items.some((i: any) => i.type === 'assignee_changed')).toBe(true);
+    const unassign = activityWs2.items.find((i: any) => i.type === 'assignee_changed');
+    expect(unassign.assignee.toUserId).toBeNull();
   });
 
   it('API-27: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {

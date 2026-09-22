@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Param,
   Patch,
@@ -22,6 +23,8 @@ import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { MoveCardDto } from './dto/move-card.dto';
 import { AddCommentDto } from './dto/add-comment.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
+import { CardActivityResponseDto } from './dto/card-activity.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
 import { BoardPermissionGuard, RequirePermissions } from '../permissions';
 
@@ -42,6 +45,17 @@ export class CardsController {
     @Body() dto: CreateCardDto,
   ): Promise<CardResponseDto> {
     return this.cardsService.create(dto, req.user.userId);
+  }
+
+  @Get(':id/activity')
+  @ApiOperation({ summary: 'Get card activity log (newest first)' })
+  @ApiResponse({ status: 200, description: 'Card activity', type: CardActivityResponseDto })
+  @RequirePermissions('board:read')
+  async getActivity(
+    @Req() req: { user: { userId: string } },
+    @Param('id') id: string,
+  ): Promise<CardActivityResponseDto> {
+    return this.cardsService.getActivity(id, req.user.userId);
   }
 
   @Patch(':id')
@@ -83,6 +97,20 @@ export class CardsController {
     return this.cardsService.addComment(id, dto, req.user.userId);
   }
 
+  @Patch(':id/comments/:commentId')
+  @ApiOperation({ summary: 'Update a comment on card' })
+  @ApiBody({ type: UpdateCommentDto })
+  @ApiResponse({ status: 200, description: 'Comment updated', type: CardResponseDto })
+  @RequirePermissions('board:read')
+  async updateComment(
+    @Req() req: { user: { userId: string } },
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @Body() dto: UpdateCommentDto,
+  ): Promise<CardResponseDto> {
+    return this.cardsService.updateComment(id, commentId, dto, req.user.userId);
+  }
+
   @Delete(':id/comments/:commentId')
   @ApiOperation({ summary: 'Delete a comment from card' })
   @ApiResponse({ status: 200, description: 'Comment deleted', type: CardResponseDto })
@@ -96,6 +124,7 @@ export class CardsController {
   }
 
   @Post(':id/restore')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Restore an archived card' })
   @ApiResponse({ status: 200, description: 'Card restored', type: CardResponseDto })
   @RequirePermissions('card:delete')

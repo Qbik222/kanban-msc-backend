@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -43,6 +43,35 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async findPublicProfilesByIds(
+    ids: string[],
+  ): Promise<Map<string, { id: string; name: string; avatarUrl?: string }>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    const map = new Map<string, { id: string; name: string; avatarUrl?: string }>();
+    if (unique.length === 0) return map;
+
+    const objectIds = unique
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    if (objectIds.length === 0) return map;
+
+    const users = await this.userModel
+      .find({ _id: { $in: objectIds } })
+      .select({ name: 1, avatarUrl: 1 })
+      .exec();
+
+    for (const u of users) {
+      const id = String(u._id);
+      map.set(id, {
+        id,
+        name: String(u.name ?? 'Unknown'),
+        avatarUrl: u.avatarUrl ? String(u.avatarUrl) : undefined,
+      });
+    }
+    return map;
   }
 
   async searchByEmailContains(

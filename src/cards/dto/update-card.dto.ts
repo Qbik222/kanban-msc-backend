@@ -10,6 +10,7 @@ import {
   MaxLength,
   MinLength,
   Validate,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { DeadlineDto, DeadlineRangeValidator } from './deadline.dto';
@@ -30,10 +31,15 @@ export class UpdateCardDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({ example: '65f0b3c3f2b7f6a1e9b1a050' })
+  @ApiPropertyOptional({
+    example: '65f0b3c3f2b7f6a1e9b1a050',
+    nullable: true,
+    description: 'Assignee user id. Pass null to clear the assignee.',
+  })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsMongoId()
-  assigneeId?: string;
+  assigneeId?: string | null;
 
   @ApiPropertyOptional({
     type: () => DeadlineDto,

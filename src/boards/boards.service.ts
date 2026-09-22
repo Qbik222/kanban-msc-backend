@@ -10,11 +10,14 @@ import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { BoardResponseDto } from './dto/board-response.dto';
 import { BoardDetailsResponseDto } from './dto/board-details-response.dto';
-import { ColumnResponseDto } from './dto/column-response.dto';
-import { CardResponseDto } from './dto/card-response.dto';
 import { BoardMember } from '../permissions/board-member.schema';
 import { BoardMemberResponseDto } from './dto/board-member-response.dto';
 import { PermissionsService } from '../permissions/permissions.service';
+import { UsersService } from '../users/users.service';
+import {
+  collectCommentAuthorIdsFromColumns,
+  mapColumnResponse,
+} from '../cards/card-response.mapper';
 
 @Injectable()
 export class BoardsService {
@@ -24,6 +27,7 @@ export class BoardsService {
     @InjectModel(BoardMember.name)
     private readonly boardMemberModel: Model<BoardMember>,
     private readonly permissionsService: PermissionsService,
+    private readonly usersService: UsersService,
   ) {}
 
   private mapId(value: unknown): string {
@@ -37,54 +41,6 @@ export class BoardsService {
       return String((value as { toString: () => string }).toString());
     }
     return '';
-  }
-
-  private toCardResponse(card: any): CardResponseDto {
-    return {
-      id: this.mapId(card?._id ?? card?.id),
-      title: card?.title ?? '',
-      description: card?.description ?? '',
-      order: card?.order ?? 0,
-      columnId: this.mapId(card?.columnId),
-      boardId: this.mapId(card?.boardId),
-      isDeleted: Boolean(card?.isDeleted),
-      taskComplete: Boolean(card?.taskComplete),
-      assigneeId: card?.assigneeId ? this.mapId(card.assigneeId) : undefined,
-      deadline: card?.deadline
-        ? {
-            startDate: card.deadline.startDate,
-            endDate: card.deadline.endDate,
-          }
-        : undefined,
-      projectIds: Array.isArray(card?.projectIds)
-        ? card.projectIds.map((id: any) => this.mapId(id))
-        : [],
-      priority: card?.priority ?? 'medium',
-      comments: Array.isArray(card?.comments)
-        ? card.comments.map((c: any) => ({
-            _id: this.mapId(c?._id ?? c?.id),
-            text: c?.text ?? '',
-            authorId: this.mapId(c?.authorId),
-            createdAt: c?.createdAt,
-          }))
-        : [],
-      createdAt: card?.createdAt,
-      updatedAt: card?.updatedAt,
-    };
-  }
-
-  private toColumnResponse(column: any): ColumnResponseDto {
-    const cards = Array.isArray(column?.cards) ? column.cards : [];
-    return {
-      id: this.mapId(column?._id ?? column?.id),
-      title: column?.title ?? '',
-      order: column?.order ?? 0,
-      boardId: this.mapId(column?.boardId),
-      isDeleted: Boolean(column?.isDeleted),
-      cards: cards.map((card: any) => this.toCardResponse(card)),
-      createdAt: column?.createdAt,
-      updatedAt: column?.updatedAt,
-    };
   }
 
   private toBoardResponse(board: any): BoardResponseDto {
@@ -102,11 +58,13 @@ export class BoardsService {
     };
   }
 
-  private toBoardDetailsResponse(board: any): BoardDetailsResponseDto {
+  private async toBoardDetailsResponse(board: any): Promise<BoardDetailsResponseDto> {
     const columns = Array.isArray(board?.columns) ? board.columns : [];
+    const authorIds = collectCommentAuthorIdsFromColumns(columns);
+    const authorsById = await this.usersService.findPublicProfilesByIds(authorIds);
     return {
       ...this.toBoardResponse(board),
-      columns: columns.map((column: any) => this.toColumnResponse(column)),
+      columns: columns.map((column: any) => mapColumnResponse(column, authorsById)),
     };
   }
 
@@ -167,7 +125,7 @@ export class BoardsService {
       throw new NotFoundException('Board not found');
     }
 
-    return this.toBoardDetailsResponse(board);
+    return await this.toBoardDetailsResponse(board);
   }
 
   async update(id: string, ownerId: string, dto: UpdateBoardDto): Promise<BoardResponseDto> {

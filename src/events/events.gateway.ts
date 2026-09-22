@@ -13,6 +13,7 @@ import { BoardResponseDto } from '../boards/dto/board-response.dto';
 import { ColumnResponseDto } from '../boards/dto/column-response.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
 import { BoardDetailsResponseDto } from '../boards/dto/board-details-response.dto';
+import { CardActivityEntryDto } from '../cards/dto/card-activity.dto';
 import { PermissionsService } from '../permissions';
 import { getSocketIoCorsOptions } from '../config/cors-origins';
 
@@ -88,5 +89,16 @@ export class EventsGateway {
 
   emitCommentAdded(boardId: string, card: CardResponseDto): void {
     this.server.to(`board:${boardId}`).emit('comment:added', card);
+  }
+
+  emitCommentUpdated(boardId: string, card: CardResponseDto): void {
+    this.server.to(`board:${boardId}`).emit('comment:updated', card);
+  }
+
+  emitCardActivity(
+    boardId: string,
+    payload: { cardId: string; items: CardActivityEntryDto[] },
+  ): void {
+    this.server.to(`board:${boardId}`).emit('card:activity', payload);
   }
 }

@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   'card:delete',
   'card:purge',
   'comment:create',
+  'comment:update:any',
+  'comment:update:own',
   'comment:delete:any',
   'comment:delete:own',
   'member:invite',
@@ -31,6 +33,7 @@ const viewerPermissions: Permission[] = [
   'board:list',
   'board:read',
   'comment:create',
+  'comment:update:own',
   'comment:delete:own',
 ];
 
@@ -45,6 +48,7 @@ const editorPermissions: Permission[] = [
   'card:update',
   'card:move',
   'card:delete',
+  'comment:update:any',
   'comment:delete:any',
   'member:invite',
   'member:remove',

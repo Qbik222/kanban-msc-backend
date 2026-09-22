@@ -14,8 +14,19 @@ import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { MoveCardDto } from './dto/move-card.dto';
 import { AddCommentDto } from './dto/add-comment.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
 import { CardResponseDto } from '../boards/dto/card-response.dto';
+import {
+  CardActivityEntryDto,
+  CardActivityResponseDto,
+} from './dto/card-activity.dto';
 import { PermissionsService } from '../permissions';
+import { CardActivityType } from './card.schema';
+import { UsersService } from '../users/users.service';
+import {
+  collectCommentAuthorIds,
+  mapCardResponse,
+} from './card-response.mapper';
 
 @Injectable()
 export class CardsService {
@@ -27,6 +38,7 @@ export class CardsService {
     private readonly boardsService: BoardsService,
     private readonly eventsGateway: EventsGateway,
     private readonly permissionsService: PermissionsService,
+    private readonly usersService: UsersService,
   ) {}
 
   private mapId(value: unknown): string {
@@ -38,35 +50,10 @@ export class CardsService {
     return '';
   }
 
-  private toCardResponse(card: any): CardResponseDto {
-    return {
-      id: this.mapId(card?._id ?? card?.id),
-      title: card?.title ?? '',
-      description: card?.description ?? '',
-      order: card?.order ?? 0,
-      columnId: this.mapId(card?.columnId),
-      boardId: this.mapId(card?.boardId),
-      isDeleted: Boolean(card?.isDeleted),
-      taskComplete: Boolean(card?.taskComplete),
-      assigneeId: card?.assigneeId ? this.mapId(card?.assigneeId) : undefined,
-      deadline: card?.deadline
-        ? { startDate: card.deadline.startDate, endDate: card.deadline.endDate }
-        : undefined,
-      projectIds: Array.isArray(card?.projectIds)
-        ? card.projectIds.map((id: any) => this.mapId(id))
-        : [],
-      priority: card?.priority ?? 'medium',
-      comments: Array.isArray(card?.comments)
-        ? (card.comments as any[]).map((c) => ({
-            _id: this.mapId(c?._id ?? c?.id),
-            text: c?.text ?? '',
-            authorId: this.mapId(c?.authorId),
-            createdAt: c?.createdAt,
-          }))
-        : [],
-      createdAt: card?.createdAt,
-      updatedAt: card?.updatedAt,
-    };
+  private async toCardResponse(card: any): Promise<CardResponseDto> {
+    const authorIds = collectCommentAuthorIds([card]);
+    const authorsById = await this.usersService.findPublicProfilesByIds(authorIds);
+    return mapCardResponse(card, authorsById);
   }
 
   async create(dto: CreateCardDto, userId: string): Promise<CardResponseDto> {
@@ -97,9 +84,147 @@ export class CardsService {
       comments: [],
     }).save();
 
-    const response = this.toCardResponse(created);
+    const response = await this.toCardResponse(created);
     this.eventsGateway.emitCardCreated(boardId, response);
     return response;
+  }
+
+  private toActivityEntry(entry: any): CardActivityEntryDto {
+    const type = entry?.type as CardActivityType;
+    const base: CardActivityEntryDto = {
+      _id: this.mapId(entry?._id ?? entry?.id),
+      type,
+      actorId: this.mapId(entry?.actorId),
+      createdAt: entry?.createdAt,
+    };
+
+    if (type === 'deadline_changed' && entry?.deadline) {
+      base.deadline = {
+        from: entry.deadline.from
+          ? {
+              startDate: entry.deadline.from.startDate,
+              endDate: entry.deadline.from.endDate,
+            }
+          : entry.deadline.from === null
+            ? null
+            : undefined,
+        to: entry.deadline.to
+          ? {
+              startDate: entry.deadline.to.startDate,
+              endDate: entry.deadline.to.endDate,
+            }
+          : entry.deadline.to === null
+            ? null
+            : undefined,
+      };
+    }
+
+    if (type === 'assignee_changed' && entry?.assignee) {
+      base.assignee = {
+        fromUserId: entry.assignee.fromUserId
+          ? this.mapId(entry.assignee.fromUserId)
+          : entry.assignee.fromUserId === null
+            ? null
+            : undefined,
+        toUserId: entry.assignee.toUserId
+          ? this.mapId(entry.assignee.toUserId)
+          : entry.assignee.toUserId === null
+            ? null
+            : undefined,
+      };
+    }
+
+    if (type === 'description_changed' && entry?.description) {
+      base.description = {
+        from: entry.description.from ?? '',
+        to: entry.description.to ?? '',
+      };
+    }
+
+    return base;
+  }
+
+  private normalizeDeadline(
+    deadline?: { startDate?: Date; endDate?: Date } | null,
+  ): { startDate?: string; endDate?: string } | null {
+    if (!deadline) return null;
+    const start = deadline.startDate ? new Date(deadline.startDate).toISOString() : undefined;
+    const end = deadline.endDate ? new Date(deadline.endDate).toISOString() : undefined;
+    if (!start && !end) return null;
+    return { startDate: start, endDate: end };
+  }
+
+  private deadlinesEqual(
+    a?: { startDate?: Date; endDate?: Date } | null,
+    b?: { startDate?: Date; endDate?: Date } | null,
+  ): boolean {
+    const na = this.normalizeDeadline(a ?? null);
+    const nb = this.normalizeDeadline(b ?? null);
+    if (na === null && nb === null) return true;
+    if (na === null || nb === null) return false;
+    return na.startDate === nb.startDate && na.endDate === nb.endDate;
+  }
+
+  private buildActivityEntries(
+    existing: Card,
+    dto: UpdateCardDto,
+    actorId: string,
+  ): Array<Record<string, unknown>> {
+    const now = new Date();
+    const actorOid = new Types.ObjectId(actorId);
+    const entries: Array<Record<string, unknown>> = [];
+
+    if (dto.description !== undefined) {
+      const from = existing.description ?? '';
+      const to = dto.description;
+      if (from !== to) {
+        entries.push({
+          type: 'description_changed',
+          actorId: actorOid,
+          createdAt: now,
+          description: { from, to },
+        });
+      }
+    }
+
+    if (dto.assigneeId !== undefined) {
+      const fromId = existing.assigneeId ? this.mapId(existing.assigneeId) : null;
+      const toId = dto.assigneeId === null ? null : dto.assigneeId;
+      if (fromId !== toId) {
+        entries.push({
+          type: 'assignee_changed',
+          actorId: actorOid,
+          createdAt: now,
+          assignee: {
+            fromUserId: fromId ? new Types.ObjectId(fromId) : null,
+            toUserId: toId ? new Types.ObjectId(toId) : null,
+          },
+        });
+      }
+    }
+
+    if (dto.deadline !== undefined) {
+      const fromDeadline = existing.deadline ?? null;
+      const toDeadline =
+        dto.deadline === null
+          ? null
+          : { startDate: dto.deadline.startDate, endDate: dto.deadline.endDate };
+      if (!this.deadlinesEqual(fromDeadline, toDeadline)) {
+        entries.push({
+          type: 'deadline_changed',
+          actorId: actorOid,
+          createdAt: now,
+          deadline: {
+            from: fromDeadline
+              ? { startDate: fromDeadline.startDate, endDate: fromDeadline.endDate }
+              : null,
+            to: toDeadline,
+          },
+        });
+      }
+    }
+
+    return entries;
   }
 
   async update(id: string, dto: UpdateCardDto, userId: string): Promise<CardResponseDto> {
@@ -119,7 +244,11 @@ export class CardsService {
     const unsetPayload: Record<string, 1> = {};
     if (dto.title !== undefined) setPayload.title = dto.title;
     if (dto.description !== undefined) setPayload.description = dto.description;
-    if (dto.assigneeId !== undefined) setPayload.assigneeId = new Types.ObjectId(dto.assigneeId);
+    if (dto.assigneeId === null) {
+      unsetPayload.assigneeId = 1;
+    } else if (dto.assigneeId !== undefined) {
+      setPayload.assigneeId = new Types.ObjectId(dto.assigneeId);
+    }
     if (dto.deadline === null) {
       unsetPayload.deadline = 1;
     } else if (dto.deadline !== undefined) {
@@ -134,9 +263,23 @@ export class CardsService {
     if (dto.priority !== undefined) setPayload.priority = dto.priority;
     if (dto.taskComplete !== undefined) setPayload.taskComplete = dto.taskComplete;
 
-    const update: { $set?: Record<string, unknown>; $unset?: Record<string, 1> } = {};
+    const activityEntries = this.buildActivityEntries(existing, dto, userId);
+
+    const update: Record<string, unknown> = {};
     if (Object.keys(setPayload).length > 0) update.$set = setPayload;
     if (Object.keys(unsetPayload).length > 0) update.$unset = unsetPayload;
+    if (activityEntries.length > 0) {
+      update.$push = {
+        activityLog: {
+          $each: activityEntries,
+          $slice: -100,
+        },
+      };
+    }
+
+    if (Object.keys(update).length === 0) {
+      return await this.toCardResponse(existing);
+    }
 
     const updated = await this.cardModel.findOneAndUpdate(
       { _id: new Types.ObjectId(id), isDeleted: false },
@@ -146,9 +289,41 @@ export class CardsService {
 
     if (!updated) throw new NotFoundException('Card not found');
 
-    const response = this.toCardResponse(updated);
+    const response = await this.toCardResponse(updated);
     this.eventsGateway.emitCardUpdated(boardId, response);
+
+    if (activityEntries.length > 0) {
+      const log = Array.isArray(updated.activityLog) ? updated.activityLog : [];
+      const newlyAdded = log.slice(-activityEntries.length).map((e) => this.toActivityEntry(e));
+      this.eventsGateway.emitCardActivity(boardId, {
+        cardId: response.id,
+        items: newlyAdded,
+      });
+    }
+
     return response;
+  }
+
+  async getActivity(id: string, userId: string): Promise<CardActivityResponseDto> {
+    const card = await this.cardModel
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
+      .exec();
+    if (!card) throw new NotFoundException('Card not found');
+
+    const boardId = card.boardId?.toString();
+    if (!boardId) throw new BadRequestException('Card boardId is missing');
+
+    await this.boardsService.findOne(boardId, userId);
+
+    const items = (Array.isArray(card.activityLog) ? card.activityLog : [])
+      .map((e) => this.toActivityEntry(e))
+      .sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+
+    return { cardId: this.mapId(card._id), items };
   }
 
   async move(id: string, dto: MoveCardDto, userId: string): Promise<CardResponseDto> {
@@ -259,7 +434,7 @@ export class CardsService {
     const boardSnapshot = await this.boardsService.findOne(boardId, userId);
     this.eventsGateway.emitCardMoved(boardId, boardSnapshot);
 
-    return this.toCardResponse(updatedMoved);
+    return await this.toCardResponse(updatedMoved);
   }
 
   async addComment(id: string, dto: AddCommentDto, userId: string): Promise<CardResponseDto> {
@@ -273,26 +448,96 @@ export class CardsService {
 
     await this.boardsService.findOne(boardId, userId);
 
+    if (dto.parentCommentId) {
+      const parent = (card.comments ?? []).find(
+        (c: any) => this.mapId(c?._id ?? c?.id) === dto.parentCommentId,
+      );
+      if (!parent) {
+        throw new BadRequestException('Parent comment not found');
+      }
+    }
+
+    const author = await this.usersService.findById(userId);
+    const commentPayload: Record<string, unknown> = {
+      text: dto.text,
+      authorId: new Types.ObjectId(userId),
+      authorName: author.name,
+      authorAvatarUrl: author.avatarUrl,
+      createdAt: new Date(),
+    };
+    if (dto.parentCommentId) {
+      commentPayload.parentCommentId = new Types.ObjectId(dto.parentCommentId);
+    }
+
     const updated = await this.cardModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), isDeleted: false },
-        {
-          $push: {
-            comments: {
-              text: dto.text,
-              authorId: new Types.ObjectId(userId),
-              createdAt: new Date(),
-            },
-          },
-        },
+        { $push: { comments: commentPayload } },
         { new: true },
       )
       .exec();
 
     if (!updated) throw new NotFoundException('Card not found');
 
-    const response = this.toCardResponse(updated);
+    const response = await this.toCardResponse(updated);
     this.eventsGateway.emitCommentAdded(boardId, response);
+    return response;
+  }
+
+  async updateComment(
+    id: string,
+    commentId: string,
+    dto: UpdateCommentDto,
+    userId: string,
+  ): Promise<CardResponseDto> {
+    const card = await this.cardModel
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
+      .exec();
+    if (!card) throw new NotFoundException('Card not found');
+
+    const boardId = card.boardId?.toString();
+    if (!boardId) throw new BadRequestException('Card boardId is missing');
+
+    await this.boardsService.findOne(boardId, userId);
+
+    const canUpdateAny = await this.permissionsService.hasPermission(
+      userId,
+      boardId,
+      'comment:update:any',
+    );
+    if (!canUpdateAny) {
+      const targetComment = (card.comments ?? []).find((comment: any) => {
+        const existingId = this.mapId(comment?._id ?? comment?.id);
+        return existingId === commentId;
+      });
+      const isOwnComment = targetComment
+        && this.mapId((targetComment as any).authorId) === userId;
+      const canUpdateOwn = await this.permissionsService.hasPermission(
+        userId,
+        boardId,
+        'comment:update:own',
+      );
+      if (!isOwnComment || !canUpdateOwn) {
+        throw new ForbiddenException('Insufficient permissions');
+      }
+    }
+
+    const updated = await this.cardModel
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(id),
+          isDeleted: false,
+          'comments._id': new Types.ObjectId(commentId),
+        },
+        { $set: { 'comments.$.text': dto.text } },
+        { new: true },
+      )
+      .exec();
+
+    if (!updated) throw new NotFoundException('Comment not found');
+
+    const response = await this.toCardResponse(updated);
+    this.eventsGateway.emitCommentUpdated(boardId, response);
     return response;
   }
 
@@ -339,7 +584,7 @@ export class CardsService {
 
     if (!updated) throw new NotFoundException('Card not found');
 
-    const response = this.toCardResponse(updated);
+    const response = await this.toCardResponse(updated);
     // Keep clients in sync after comment delete (closest existing event is card_updated)
     this.eventsGateway.emitCardUpdated(boardId, response);
 
@@ -383,7 +628,7 @@ export class CardsService {
 
     const snapshot = await this.boardsService.findOne(boardId, userId);
     this.eventsGateway.emitCardMoved(boardId, snapshot);
-    return this.toCardResponse(deleted);
+    return await this.toCardResponse(deleted);
   }
 
   async restore(id: string, userId: string): Promise<CardResponseDto> {
@@ -419,7 +664,7 @@ export class CardsService {
 
     const snapshot = await this.boardsService.findOne(boardId, userId);
     this.eventsGateway.emitCardMoved(boardId, snapshot);
-    return this.toCardResponse(restored);
+    return await this.toCardResponse(restored);
   }
 
   async removePermanent(id: string, userId: string): Promise<void> {

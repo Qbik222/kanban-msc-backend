@@ -5,6 +5,7 @@ import { Column, ColumnSchema } from '../columns/column.schema';
 import { BoardsModule } from '../boards/boards.module';
 import { EventsModule } from '../events/events.module';
 import { PermissionsModule } from '../permissions';
+import { UsersModule } from '../users/users.module';
 import { CardsController } from './cards.controller';
 import { CardsService } from './cards.service';
 
@@ -17,6 +18,7 @@ import { CardsService } from './cards.service';
     BoardsModule,
     EventsModule,
     PermissionsModule,
+    UsersModule,
   ],
   controllers: [CardsController],
   providers: [CardsService],

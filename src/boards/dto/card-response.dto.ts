@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class CardCommentAuthorDto {
+  @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a222' })
+  id!: string;
+
+  @ApiProperty({ example: 'Jane Doe' })
+  name!: string;
+
+  @ApiPropertyOptional({ example: 'https://example.com/avatar.png' })
+  avatarUrl?: string;
+}
+
 export class CardCommentDto {
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a111' })
   _id!: string;
@@ -9,6 +20,15 @@ export class CardCommentDto {
 
   @ApiProperty({ example: '65f0b3c3f2b7f6a1e9b1a222' })
   authorId!: string;
+
+  @ApiProperty({ type: CardCommentAuthorDto })
+  author!: CardCommentAuthorDto;
+
+  @ApiPropertyOptional({
+    example: '65f0b3c3f2b7f6a1e9b1a110',
+    description: 'Parent comment id when this is a reply',
+  })
+  parentCommentId?: string;
 
   @ApiPropertyOptional({ example: '2026-03-19T09:30:00.000Z' })
   createdAt?: Date;

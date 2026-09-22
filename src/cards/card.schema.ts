@@ -1,6 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
+export type CardActivityType =
+  | 'deadline_changed'
+  | 'assignee_changed'
+  | 'description_changed';
+
 @Schema({
   timestamps: true,
 })
@@ -54,6 +59,9 @@ export class Card extends Document {
       {
         text: { type: String, required: true, trim: true },
         authorId: { type: Types.ObjectId, ref: 'User', required: true },
+        authorName: { type: String, required: false, trim: true },
+        authorAvatarUrl: { type: String, required: false },
+        parentCommentId: { type: Types.ObjectId, required: false },
         createdAt: { type: Date, default: () => new Date() },
       },
     ],
@@ -63,7 +71,81 @@ export class Card extends Document {
     _id: Types.ObjectId;
     text: string;
     authorId: Types.ObjectId;
+    authorName?: string;
+    authorAvatarUrl?: string;
+    parentCommentId?: Types.ObjectId;
     createdAt: Date;
+  }>;
+
+  @Prop({
+    type: [
+      {
+        type: {
+          type: String,
+          enum: ['deadline_changed', 'assignee_changed', 'description_changed'],
+          required: true,
+        },
+        actorId: { type: Types.ObjectId, ref: 'User', required: true },
+        createdAt: { type: Date, default: () => new Date() },
+        deadline: {
+          type: {
+            from: {
+              type: {
+                startDate: { type: Date, required: false },
+                endDate: { type: Date, required: false },
+              },
+              _id: false,
+              required: false,
+            },
+            to: {
+              type: {
+                startDate: { type: Date, required: false },
+                endDate: { type: Date, required: false },
+              },
+              _id: false,
+              required: false,
+            },
+          },
+          _id: false,
+          required: false,
+        },
+        assignee: {
+          type: {
+            fromUserId: { type: Types.ObjectId, ref: 'User', required: false },
+            toUserId: { type: Types.ObjectId, ref: 'User', required: false },
+          },
+          _id: false,
+          required: false,
+        },
+        description: {
+          type: {
+            from: { type: String, required: true },
+            to: { type: String, required: true },
+          },
+          _id: false,
+          required: false,
+        },
+      },
+    ],
+    default: [],
+  })
+  activityLog!: Array<{
+    _id: Types.ObjectId;
+    type: CardActivityType;
+    actorId: Types.ObjectId;
+    createdAt: Date;
+    deadline?: {
+      from?: { startDate?: Date; endDate?: Date } | null;
+      to?: { startDate?: Date; endDate?: Date } | null;
+    };
+    assignee?: {
+      fromUserId?: Types.ObjectId | null;
+      toUserId?: Types.ObjectId | null;
+    };
+    description?: {
+      from: string;
+      to: string;
+    };
   }>;
 
   @Prop({ default: false })

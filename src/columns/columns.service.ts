@@ -12,7 +12,11 @@ import { CreateColumnDto } from './dto/create-column.dto';
 import { UpdateColumnDto } from './dto/update-column.dto';
 import { ReorderColumnItemDto } from './dto/reorder-columns.dto';
 import { ColumnResponseDto } from '../boards/dto/column-response.dto';
-import { CardResponseDto } from '../boards/dto/card-response.dto';
+import { UsersService } from '../users/users.service';
+import {
+  collectCommentAuthorIdsFromColumns,
+  mapColumnResponse,
+} from '../cards/card-response.mapper';
 
 @Injectable()
 export class ColumnsService {
@@ -23,6 +27,7 @@ export class ColumnsService {
     private readonly cardModel: Model<Card>,
     private readonly boardsService: BoardsService,
     private readonly eventsGateway: EventsGateway,
+    private readonly usersService: UsersService,
   ) {}
 
   private mapId(value: unknown): string {
@@ -32,54 +37,6 @@ export class ColumnsService {
       return String((value as { toString: () => string }).toString());
     }
     return '';
-  }
-
-  private toCardResponse(card: any): CardResponseDto {
-    return {
-      id: this.mapId(card?._id ?? card?.id),
-      title: card?.title ?? '',
-      description: card?.description ?? '',
-      order: card?.order ?? 0,
-      columnId: this.mapId(card?.columnId),
-      boardId: this.mapId(card?.boardId),
-      isDeleted: Boolean(card?.isDeleted),
-      taskComplete: Boolean(card?.taskComplete),
-      assigneeId: card?.assigneeId ? this.mapId(card?.assigneeId) : undefined,
-      deadline: card?.deadline
-        ? {
-            startDate: card.deadline.startDate,
-            endDate: card.deadline.endDate,
-          }
-        : undefined,
-      projectIds: Array.isArray(card?.projectIds)
-        ? card.projectIds.map((id: any) => this.mapId(id))
-        : [],
-      priority: card?.priority ?? 'medium',
-      comments: Array.isArray(card?.comments)
-        ? card.comments.map((c: any) => ({
-            _id: this.mapId(c?._id ?? c?.id),
-            text: c?.text ?? '',
-            authorId: this.mapId(c?.authorId),
-            createdAt: c?.createdAt,
-          }))
-        : [],
-      createdAt: card?.createdAt,
-      updatedAt: card?.updatedAt,
-    };
-  }
-
-  private toColumnResponse(column: any): ColumnResponseDto {
-    const cards = Array.isArray(column?.cards) ? column.cards : [];
-    return {
-      id: this.mapId(column?._id ?? column?.id),
-      title: column?.title ?? '',
-      order: column?.order ?? 0,
-      boardId: this.mapId(column?.boardId),
-      isDeleted: Boolean(column?.isDeleted),
-      cards: cards.map((card: any) => this.toCardResponse(card)),
-      createdAt: column?.createdAt,
-      updatedAt: column?.updatedAt,
-    };
   }
 
   private async getActiveColumnsForBoard(boardId: string): Promise<ColumnResponseDto[]> {
@@ -92,7 +49,13 @@ export class ColumnsService {
         options: { sort: { order: 1 } },
       })
       .exec();
-    return columns.map((col) => this.toColumnResponse(col));
+    const authorIds = collectCommentAuthorIdsFromColumns(columns);
+    const authorsById = await this.usersService.findPublicProfilesByIds(authorIds);
+    return columns.map((col) => mapColumnResponse(col, authorsById));
+  }
+
+  private toColumnResponseLite(column: any): ColumnResponseDto {
+    return mapColumnResponse(column, new Map());
   }
 
   async create(dto: CreateColumnDto, userId: string): Promise<ColumnResponseDto> {
@@ -111,7 +74,7 @@ export class ColumnsService {
 
     const columns = await this.getActiveColumnsForBoard(dto.boardId);
     this.eventsGateway.emitColumnsUpdated(dto.boardId, columns);
-    return this.toColumnResponse(saved);
+    return this.toColumnResponseLite(saved);
   }
 
   async reorder(items: ReorderColumnItemDto[], userId: string): Promise<ColumnResponseDto[]> {
@@ -175,7 +138,7 @@ export class ColumnsService {
 
     const columns = await this.getActiveColumnsForBoard(boardId);
     this.eventsGateway.emitColumnsUpdated(boardId, columns);
-    return this.toColumnResponse(updated);
+    return mapColumnResponse(updated, new Map());
   }
 
   async remove(id: string, userId: string): Promise<void> {

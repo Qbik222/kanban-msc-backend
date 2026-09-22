@@ -20,7 +20,7 @@
 - Board: `board:create`, `board:list`, `board:read`, `board:update`, `board:delete`
 - Columns: `column:create`, `column:update`, `column:reorder`, `column:delete`
 - Cards: `card:create`, `card:update`, `card:move`, `card:delete`, `card:purge`
-- Comments: `comment:create`, `comment:delete:any`, `comment:delete:own`
+- Comments: `comment:create`, `comment:update:any`, `comment:update:own`, `comment:delete:any`, `comment:delete:own`
 - Members: `member:invite`, `member:update_role`, `member:remove`
 
 ## Role -> Permission Matrix
@@ -42,6 +42,8 @@
 | `card:delete` | ✅ | ✅ | ❌ |
 | `card:purge` | ✅ | ❌ | ❌ |
 | `comment:create` | ✅ | ✅ | ✅ |
+| `comment:update:any` | ✅ | ✅ | ❌ |
+| `comment:update:own` | ✅ | ✅ | ✅ |
 | `comment:delete:any` | ✅ | ✅ | ❌ |
 | `comment:delete:own` | ✅ | ✅ | ✅ |
 | `member:invite` | ✅ | ✅ | ❌ |
@@ -83,11 +85,13 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 
 - `POST /cards` -> `card:create`
 - `PATCH /cards/:id` -> `card:update`
+- `GET /cards/:id/activity` -> `board:read`
 - `PATCH /cards/:id/move` -> `card:move`
 - `DELETE /cards/:id` -> `card:delete` (archive / soft delete)
 - `POST /cards/:id/restore` -> `card:delete` (unarchive)
 - `DELETE /cards/:id/permanent` -> `card:purge` (owner only; team admin also allowed)
 - `POST /cards/:id/comments` -> `comment:create`
+- `PATCH /cards/:id/comments/:commentId` -> `comment:update:any` or `comment:update:own`
 - `DELETE /cards/:id/comments/:commentId` -> `comment:delete:any` or `comment:delete:own`
 
 ### WebSocket
@@ -103,6 +107,9 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 - Comment delete is allowed when:
   - user has `comment:delete:any`, or
   - user has `comment:delete:own` and is comment author.
+- Comment update is allowed when:
+  - user has `comment:update:any`, or
+  - user has `comment:update:own` and is comment author.
 
 ## Rollout Checklist
 
@@ -114,4 +121,5 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 - [x] Member management endpoints.
 - [x] Card soft delete endpoint.
 - [x] Card permanent delete endpoint (`card:purge`, owner only).
+- [x] Comment update + card activity log endpoints.
 - [x] E2E coverage for role-based access cases.
