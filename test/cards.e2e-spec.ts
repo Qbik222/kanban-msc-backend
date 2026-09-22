@@ -114,7 +114,7 @@ describe('Cards E2E', () => {
   async function updateCardAndWait(token: string, cardId: string, updatePayload: any): Promise<any> {
     const cardUpdatedP = waitForSocketEvent<any>(socket, 'card:updated');
 
-    await request(app.getHttpServer())
+    const httpRes = await request(app.getHttpServer())
       .patch(`/cards/${cardId}`)
       .set('Authorization', `Bearer ${token}`)
       .send(updatePayload)
@@ -122,7 +122,7 @@ describe('Cards E2E', () => {
 
     const wsPayload = await cardUpdatedP;
     expect(wsPayload.id).toBe(cardId);
-    return wsPayload;
+    return { wsPayload, httpBody: httpRes.body };
   }
 
   async function moveCardAndWait(
@@ -314,6 +314,8 @@ describe('Cards E2E', () => {
 
     expect(card.httpBody.description).toBe('');
     expect(card.wsPayload.description).toBe('');
+    expect(card.httpBody.taskComplete).toBe(false);
+    expect(card.wsPayload.taskComplete).toBe(false);
   });
 
   it('API-15: POST /cards => ws card:created (another card)', async () => {
@@ -374,8 +376,13 @@ describe('Cards E2E', () => {
       description: 'Description',
     });
 
-    const wsPayload = await updateCardAndWait(token, card.cardId, { title: 'Card updated' });
+    const { wsPayload, httpBody } = await updateCardAndWait(token, card.cardId, {
+      title: 'Card updated',
+      taskComplete: true,
+    });
     expect(wsPayload.title).toBe('Card updated');
+    expect(wsPayload.taskComplete).toBe(true);
+    expect(httpBody.taskComplete).toBe(true);
   });
 
   it('API-18: PATCH /cards/:id/move within same column => ws card:moved + order in snapshot', async () => {

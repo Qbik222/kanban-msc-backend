@@ -46,6 +46,9 @@ export class Card extends Document {
   })
   priority?: 'low' | 'medium' | 'high';
 
+  @Prop({ type: Boolean, required: true, default: false })
+  taskComplete!: boolean;
+
   @Prop({
     type: [
       {

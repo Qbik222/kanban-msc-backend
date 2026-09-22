@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsMongoId,
   IsOptional,
   IsIn,
@@ -57,5 +58,10 @@ export class UpdateCardDto {
   @IsOptional()
   @IsIn(['low', 'medium', 'high'])
   priority?: 'low' | 'medium' | 'high';
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  taskComplete?: boolean;
 }
 

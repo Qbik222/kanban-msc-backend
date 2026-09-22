@@ -47,6 +47,7 @@ export class CardsService {
       columnId: this.mapId(card?.columnId),
       boardId: this.mapId(card?.boardId),
       isDeleted: Boolean(card?.isDeleted),
+      taskComplete: Boolean(card?.taskComplete),
       assigneeId: card?.assigneeId ? this.mapId(card?.assigneeId) : undefined,
       deadline: card?.deadline
         ? { startDate: card.deadline.startDate, endDate: card.deadline.endDate }
@@ -127,6 +128,7 @@ export class CardsService {
       updatePayload.projectIds = dto.projectIds.map((pid) => new Types.ObjectId(pid));
     }
     if (dto.priority !== undefined) updatePayload.priority = dto.priority;
+    if (dto.taskComplete !== undefined) updatePayload.taskComplete = dto.taskComplete;
 
     const updated = await this.cardModel.findOneAndUpdate(
       { _id: new Types.ObjectId(id), isDeleted: false },

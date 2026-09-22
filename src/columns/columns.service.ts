@@ -43,6 +43,7 @@ export class ColumnsService {
       columnId: this.mapId(card?.columnId),
       boardId: this.mapId(card?.boardId),
       isDeleted: Boolean(card?.isDeleted),
+      taskComplete: Boolean(card?.taskComplete),
       assigneeId: card?.assigneeId ? this.mapId(card?.assigneeId) : undefined,
       deadline: card?.deadline
         ? {

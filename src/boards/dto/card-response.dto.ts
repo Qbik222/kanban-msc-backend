@@ -36,6 +36,9 @@ export class CardResponseDto {
   @ApiProperty({ example: false })
   isDeleted!: boolean;
 
+  @ApiProperty({ example: false })
+  taskComplete!: boolean;
+
   @ApiPropertyOptional({ example: '65f0b3c3f2b7f6a1e9b1a333' })
   assigneeId?: string;
 
