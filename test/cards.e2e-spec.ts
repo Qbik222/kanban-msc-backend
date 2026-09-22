@@ -575,7 +575,62 @@ describe('Cards E2E', () => {
     expect(stillInDb).toBeNull();
   });
 
-  it('API-25: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {
+  it('API-25: archive then POST /cards/:id/restore => card back at end of column + ws card:moved', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_restore@example.com',
+      'password123',
+      'TC Cards Restore',
+      'Board for cards e2e (API-25 restore)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card1 = await createCardAndWait(token, col1Id, { title: 'Stay', description: 'A' });
+    const card2 = await createCardAndWait(token, col1Id, { title: 'Archive me', description: 'B' });
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${card2.cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const movedP = waitForSocketEvent<any>(socket, 'card:moved');
+    const restoreRes = await request(app.getHttpServer())
+      .post(`/cards/${card2.cardId}/restore`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await movedP;
+
+    expect(restoreRes.body.isDeleted).toBe(false);
+    expect(restoreRes.body.columnId).toBe(col1Id);
+    expect(restoreRes.body.order).toBe(1);
+
+    const boardSnapshot = await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const col1 = boardSnapshot.body.columns.find((c: any) => c.id === col1Id);
+    expect(col1.cards.map((c: any) => c.id)).toEqual([card1.cardId, card2.cardId]);
+    expect(col1.cards[1].order).toBe(1);
+  });
+
+  it('API-26: POST /cards/:id/restore on active card => 404', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_restore_active@example.com',
+      'password123',
+      'TC Cards Restore Active',
+      'Board for cards e2e (API-26 restore active)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'Active', description: 'A' });
+
+    await request(app.getHttpServer())
+      .post(`/cards/${card.cardId}/restore`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('API-27: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {
     const { token, boardId } = await setupUserBoardAndJoin(
       'tc_cards_13@example.com',
       'password123',

@@ -85,6 +85,7 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 - `PATCH /cards/:id` -> `card:update`
 - `PATCH /cards/:id/move` -> `card:move`
 - `DELETE /cards/:id` -> `card:delete` (archive / soft delete)
+- `POST /cards/:id/restore` -> `card:delete` (unarchive)
 - `DELETE /cards/:id/permanent` -> `card:purge` (owner only; team admin also allowed)
 - `POST /cards/:id/comments` -> `comment:create`
 - `DELETE /cards/:id/comments/:commentId` -> `comment:delete:any` or `comment:delete:own`

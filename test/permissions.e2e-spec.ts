@@ -335,6 +335,68 @@ describe('Permissions E2E', () => {
       .expect(404);
   });
 
+  it('viewer cannot restore archived card; editor can', async () => {
+    const ownerToken = await registerAndLogin(app, 'perm_owner_restore@example.com', 'password123', 'Owner Restore');
+    const editorToken = await registerAndLogin(app, 'perm_editor_restore@example.com', 'password123', 'Editor Restore');
+    const viewerToken = await registerAndLogin(app, 'perm_viewer_restore@example.com', 'password123', 'Viewer Restore');
+
+    const editorUser = await dbConnection.collection('users').findOne({ email: 'perm_editor_restore@example.com' });
+    const viewerUser = await dbConnection.collection('users').findOne({ email: 'perm_viewer_restore@example.com' });
+
+    const teamId = await createTeam(app, ownerToken, 'Perm team restore');
+    await addTeamMember(app, ownerToken, teamId, String(editorUser?._id));
+    await addTeamMember(app, ownerToken, teamId, String(viewerUser?._id));
+
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board Restore', teamId);
+
+    await request(app.getHttpServer())
+      .post(`/boards/${boardId}/members`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ userId: String(editorUser?._id) })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/boards/${boardId}/members`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ userId: String(viewerUser?._id) })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/boards/${boardId}/members/${String(editorUser?._id)}/role`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ role: 'editor' })
+      .expect(200);
+
+    const columnRes = await request(app.getHttpServer())
+      .post('/columns')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Todo', boardId })
+      .expect(201);
+    const columnId = columnRes.body.id as string;
+
+    const card = await request(app.getHttpServer())
+      .post('/cards')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'To restore', description: 'Desc', columnId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${card.body.id}`)
+      .set('Authorization', `Bearer ${editorToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/cards/${card.body.id}/restore`)
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .expect(403);
+
+    const restoreRes = await request(app.getHttpServer())
+      .post(`/cards/${card.body.id}/restore`)
+      .set('Authorization', `Bearer ${editorToken}`)
+      .expect(200);
+    expect(restoreRes.body.isDeleted).toBe(false);
+  });
+
   it('team admin can read board without board membership', async () => {
     const u1Token = await registerAndLogin(app, 'perm_coadmin_a@example.com', 'password123', 'Co A');
     const u2Token = await registerAndLogin(app, 'perm_coadmin_b@example.com', 'password123', 'Co B');

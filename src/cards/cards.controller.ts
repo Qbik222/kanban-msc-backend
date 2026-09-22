@@ -95,6 +95,17 @@ export class CardsController {
     return this.cardsService.deleteComment(id, commentId, req.user.userId);
   }
 
+  @Post(':id/restore')
+  @ApiOperation({ summary: 'Restore an archived card' })
+  @ApiResponse({ status: 200, description: 'Card restored', type: CardResponseDto })
+  @RequirePermissions('card:delete')
+  async restore(
+    @Req() req: { user: { userId: string } },
+    @Param('id') id: string,
+  ): Promise<CardResponseDto> {
+    return this.cardsService.restore(id, req.user.userId);
+  }
+
   @Delete(':id/permanent')
   @HttpCode(204)
   @ApiOperation({ summary: 'Permanently delete a card (owner only)' })

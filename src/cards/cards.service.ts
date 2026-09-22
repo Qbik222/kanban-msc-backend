@@ -386,6 +386,42 @@ export class CardsService {
     return this.toCardResponse(deleted);
   }
 
+  async restore(id: string, userId: string): Promise<CardResponseDto> {
+    const card = await this.cardModel
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: true })
+      .exec();
+    if (!card) throw new NotFoundException('Card not found');
+
+    const boardId = card.boardId?.toString();
+    if (!boardId) throw new BadRequestException('Card boardId is missing');
+
+    await this.permissionsService.assertPermission(userId, boardId, 'card:delete');
+
+    const column = await this.columnModel
+      .findOne({ _id: card.columnId, isDeleted: false })
+      .exec();
+    if (!column) {
+      throw new BadRequestException('Column not found or deleted');
+    }
+
+    const order = await this.cardModel
+      .countDocuments({ columnId: card.columnId, isDeleted: false })
+      .exec();
+
+    const restored = await this.cardModel
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(id), isDeleted: true },
+        { $set: { isDeleted: false, order } },
+        { new: true },
+      )
+      .exec();
+    if (!restored) throw new NotFoundException('Card not found');
+
+    const snapshot = await this.boardsService.findOne(boardId, userId);
+    this.eventsGateway.emitCardMoved(boardId, snapshot);
+    return this.toCardResponse(restored);
+  }
+
   async removePermanent(id: string, userId: string): Promise<void> {
     const card = await this.cardModel
       .findOne({ _id: new Types.ObjectId(id) })
