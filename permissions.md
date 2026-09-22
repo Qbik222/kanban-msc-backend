@@ -19,7 +19,7 @@
 
 - Board: `board:create`, `board:list`, `board:read`, `board:update`, `board:delete`
 - Columns: `column:create`, `column:update`, `column:reorder`, `column:delete`
-- Cards: `card:create`, `card:update`, `card:move`, `card:delete`
+- Cards: `card:create`, `card:update`, `card:move`, `card:delete`, `card:purge`
 - Comments: `comment:create`, `comment:delete:any`, `comment:delete:own`
 - Members: `member:invite`, `member:update_role`, `member:remove`
 
@@ -40,6 +40,7 @@
 | `card:update` | ✅ | ✅ | ❌ |
 | `card:move` | ✅ | ✅ | ❌ |
 | `card:delete` | ✅ | ✅ | ❌ |
+| `card:purge` | ✅ | ❌ | ❌ |
 | `comment:create` | ✅ | ✅ | ✅ |
 | `comment:delete:any` | ✅ | ✅ | ❌ |
 | `comment:delete:own` | ✅ | ✅ | ✅ |
@@ -83,7 +84,8 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 - `POST /cards` -> `card:create`
 - `PATCH /cards/:id` -> `card:update`
 - `PATCH /cards/:id/move` -> `card:move`
-- `DELETE /cards/:id` -> `card:delete`
+- `DELETE /cards/:id` -> `card:delete` (archive / soft delete)
+- `DELETE /cards/:id/permanent` -> `card:purge` (owner only; team admin also allowed)
 - `POST /cards/:id/comments` -> `comment:create`
 - `DELETE /cards/:id/comments/:commentId` -> `comment:delete:any` or `comment:delete:own`
 
@@ -110,4 +112,5 @@ The `board:create` row reflects the permission bit used on **`POST /boards`** to
 - [x] WebSocket `joinBoard` permission check.
 - [x] Member management endpoints.
 - [x] Card soft delete endpoint.
+- [x] Card permanent delete endpoint (`card:purge`, owner only).
 - [x] E2E coverage for role-based access cases.

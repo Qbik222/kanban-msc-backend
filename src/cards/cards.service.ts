@@ -385,5 +385,45 @@ export class CardsService {
     this.eventsGateway.emitCardMoved(boardId, snapshot);
     return this.toCardResponse(deleted);
   }
+
+  async removePermanent(id: string, userId: string): Promise<void> {
+    const card = await this.cardModel
+      .findOne({ _id: new Types.ObjectId(id) })
+      .exec();
+    if (!card) throw new NotFoundException('Card not found');
+
+    const boardId = card.boardId?.toString();
+    if (!boardId) throw new BadRequestException('Card boardId is missing');
+
+    await this.permissionsService.assertPermission(userId, boardId, 'card:purge');
+
+    const wasActive = card.isDeleted !== true;
+    const columnId = card.columnId;
+
+    const deleted = await this.cardModel
+      .findOneAndDelete({ _id: new Types.ObjectId(id) })
+      .exec();
+    if (!deleted) throw new NotFoundException('Card not found');
+
+    if (wasActive) {
+      const activeCards = await this.cardModel
+        .find({ columnId, isDeleted: false })
+        .sort({ order: 1 })
+        .exec();
+
+      if (activeCards.length > 0) {
+        const ops = activeCards.map((current, idx) => ({
+          updateOne: {
+            filter: { _id: current._id },
+            update: { $set: { order: idx } },
+          },
+        }));
+        await this.cardModel.bulkWrite(ops);
+      }
+    }
+
+    const snapshot = await this.boardsService.findOne(boardId, userId);
+    this.eventsGateway.emitCardMoved(boardId, snapshot);
+  }
 }
 

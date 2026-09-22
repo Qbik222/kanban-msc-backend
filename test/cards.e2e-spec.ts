@@ -2,7 +2,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test } from '@nestjs/testing';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { INestApplication } from '@nestjs/common';
-import { Connection } from 'mongoose';
+import { Connection, Types } from 'mongoose';
 import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
@@ -521,7 +521,61 @@ describe('Cards E2E', () => {
     expect(updatedWs.comments).toHaveLength(0);
   });
 
-  it('API-23: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {
+  it('API-23: DELETE /cards/:id/permanent => 204 and card gone from board snapshot', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_purge@example.com',
+      'password123',
+      'TC Cards Purge',
+      'Board for cards e2e (API-23 purge)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'Purge me', description: 'Gone' });
+
+    const movedP = waitForSocketEvent<any>(socket, 'card:moved');
+    await request(app.getHttpServer())
+      .delete(`/cards/${card.cardId}/permanent`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+    await movedP;
+
+    const boardSnapshot = await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const col1 = boardSnapshot.body.columns.find((c: any) => c.id === col1Id);
+    expect(col1.cards.find((c: any) => c.id === card.cardId)).toBeUndefined();
+  });
+
+  it('API-24: DELETE /cards/:id then /permanent on archived card => 204', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_purge_archived@example.com',
+      'password123',
+      'TC Cards Purge Archived',
+      'Board for cards e2e (API-24 purge archived)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, { title: 'Archive then purge', description: 'Gone' });
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${card.cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${card.cardId}/permanent`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    const stillInDb = await dbConnection.collection('cards').findOne({
+      _id: new Types.ObjectId(card.cardId),
+    });
+    expect(stillInDb).toBeNull();
+  });
+
+  it('API-25: final snapshot GET /boards/:id after move + comment delete => moved card comments empty', async () => {
     const { token, boardId } = await setupUserBoardAndJoin(
       'tc_cards_13@example.com',
       'password123',

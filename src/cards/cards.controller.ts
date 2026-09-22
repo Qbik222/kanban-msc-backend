@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -94,9 +95,21 @@ export class CardsController {
     return this.cardsService.deleteComment(id, commentId, req.user.userId);
   }
 
+  @Delete(':id/permanent')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Permanently delete a card (owner only)' })
+  @ApiResponse({ status: 204, description: 'Card permanently deleted' })
+  @RequirePermissions('card:purge')
+  async removePermanent(
+    @Req() req: { user: { userId: string } },
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.cardsService.removePermanent(id, req.user.userId);
+  }
+
   @Delete(':id')
-  @ApiOperation({ summary: 'Soft delete a card' })
-  @ApiResponse({ status: 200, description: 'Card deleted', type: CardResponseDto })
+  @ApiOperation({ summary: 'Archive card (soft delete)' })
+  @ApiResponse({ status: 200, description: 'Card archived', type: CardResponseDto })
   @RequirePermissions('card:delete')
   async remove(
     @Req() req: { user: { userId: string } },
@@ -105,4 +118,3 @@ export class CardsController {
     return this.cardsService.remove(id, req.user.userId);
   }
 }
-

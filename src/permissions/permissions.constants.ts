@@ -16,6 +16,7 @@ export const PERMISSIONS = [
   'card:update',
   'card:move',
   'card:delete',
+  'card:purge',
   'comment:create',
   'comment:delete:any',
   'comment:delete:own',
@@ -52,6 +53,7 @@ const editorPermissions: Permission[] = [
 const ownerPermissions: Permission[] = [
   ...editorPermissions,
   'board:delete',
+  'card:purge',
   'member:update_role',
 ];
 

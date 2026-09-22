@@ -256,6 +256,85 @@ describe('Permissions E2E', () => {
     expect(activeCards[0].order).toBe(0);
   });
 
+  it('editor can archive card but cannot permanently delete; owner can purge', async () => {
+    const ownerToken = await registerAndLogin(app, 'perm_owner_purge@example.com', 'password123', 'Owner Purge');
+    const editorToken = await registerAndLogin(app, 'perm_editor_purge@example.com', 'password123', 'Editor Purge');
+
+    const editorUser = await dbConnection.collection('users').findOne({ email: 'perm_editor_purge@example.com' });
+
+    const teamId = await createTeam(app, ownerToken, 'Perm team purge');
+    await addTeamMember(app, ownerToken, teamId, String(editorUser?._id));
+
+    const boardId = await createBoard(app, ownerToken, 'Permissions Board Purge', teamId);
+
+    await request(app.getHttpServer())
+      .post(`/boards/${boardId}/members`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ userId: String(editorUser?._id) })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/boards/${boardId}/members/${String(editorUser?._id)}/role`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ role: 'editor' })
+      .expect(200);
+
+    const columnRes = await request(app.getHttpServer())
+      .post('/columns')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Todo', boardId })
+      .expect(201);
+    const columnId = columnRes.body.id as string;
+
+    const activeCard = await request(app.getHttpServer())
+      .post('/cards')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Active purge target', description: 'Desc', columnId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${activeCard.body.id}/permanent`)
+      .set('Authorization', `Bearer ${editorToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${activeCard.body.id}/permanent`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(204);
+
+    const archivedCard = await request(app.getHttpServer())
+      .post('/cards')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Archive then purge', description: 'Desc', columnId })
+      .expect(201);
+
+    const archiveRes = await request(app.getHttpServer())
+      .delete(`/cards/${archivedCard.body.id}`)
+      .set('Authorization', `Bearer ${editorToken}`)
+      .expect(200);
+    expect(archiveRes.body.isDeleted).toBe(true);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${archivedCard.body.id}/permanent`)
+      .set('Authorization', `Bearer ${editorToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${archivedCard.body.id}/permanent`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(204);
+
+    const stillInDb = await dbConnection.collection('cards').findOne({
+      _id: new Types.ObjectId(archivedCard.body.id),
+    });
+    expect(stillInDb).toBeNull();
+
+    await request(app.getHttpServer())
+      .delete(`/cards/${archivedCard.body.id}/permanent`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(404);
+  });
+
   it('team admin can read board without board membership', async () => {
     const u1Token = await registerAndLogin(app, 'perm_coadmin_a@example.com', 'password123', 'Co A');
     const u2Token = await registerAndLogin(app, 'perm_coadmin_b@example.com', 'password123', 'Co B');

@@ -152,7 +152,6 @@ export class PermissionsService {
   async resolveBoardIdFromCard(cardId: string): Promise<string> {
     const card = await this.cardModel.findOne({
       _id: this.toObjectId(cardId),
-      isDeleted: { $ne: true },
     }).exec();
     if (!card) {
       throw new NotFoundException('Card not found');
