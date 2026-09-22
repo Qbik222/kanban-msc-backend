@@ -362,6 +362,41 @@ describe('Cards E2E', () => {
       .expect(400);
   });
 
+  it('API-16b: PATCH /cards/:id (deadline: null) clears deadline', async () => {
+    const { token, boardId } = await setupUserBoardAndJoin(
+      'tc_cards_06b@example.com',
+      'password123',
+      'TC Cards 06b',
+      'Board for cards e2e (API-16b)',
+    );
+
+    const { col1Id } = await createColumns(token, boardId);
+    const card = await createCardAndWait(token, col1Id, {
+      title: 'Card to clear deadline',
+      description: 'Description',
+      deadline: { startDate: '2026-03-19T09:00:00.000Z', endDate: '2026-03-20T09:00:00.000Z' },
+    });
+
+    const { wsPayload, httpBody } = await updateCardAndWait(token, card.cardId, {
+      deadline: null,
+    });
+
+    expect(httpBody.deadline).toBeUndefined();
+    expect(wsPayload.deadline).toBeUndefined();
+
+    const boardSnapshot = await request(app.getHttpServer())
+      .get(`/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const clearedCard = boardSnapshot.body.columns
+      .find((c: any) => c.id === col1Id)
+      .cards.find((c: any) => c.id === card.cardId);
+
+    expect(clearedCard).toBeTruthy();
+    expect(clearedCard.deadline).toBeUndefined();
+  });
+
   it('API-17: PATCH /cards/:id => ws card:updated', async () => {
     const { token, boardId } = await setupUserBoardAndJoin(
       'tc_cards_07@example.com',

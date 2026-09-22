@@ -115,24 +115,32 @@ export class CardsService {
 
     await this.boardsService.findOne(boardId, userId);
 
-    const updatePayload: any = {};
-    if (dto.title !== undefined) updatePayload.title = dto.title;
-    if (dto.description !== undefined) updatePayload.description = dto.description;
-    if (dto.assigneeId !== undefined) updatePayload.assigneeId = new Types.ObjectId(dto.assigneeId);
-    if (dto.deadline !== undefined) {
-      updatePayload.deadline = dto.deadline
-        ? { startDate: dto.deadline.startDate, endDate: dto.deadline.endDate }
-        : undefined;
+    const setPayload: Record<string, unknown> = {};
+    const unsetPayload: Record<string, 1> = {};
+    if (dto.title !== undefined) setPayload.title = dto.title;
+    if (dto.description !== undefined) setPayload.description = dto.description;
+    if (dto.assigneeId !== undefined) setPayload.assigneeId = new Types.ObjectId(dto.assigneeId);
+    if (dto.deadline === null) {
+      unsetPayload.deadline = 1;
+    } else if (dto.deadline !== undefined) {
+      setPayload.deadline = {
+        startDate: dto.deadline.startDate,
+        endDate: dto.deadline.endDate,
+      };
     }
     if (dto.projectIds !== undefined) {
-      updatePayload.projectIds = dto.projectIds.map((pid) => new Types.ObjectId(pid));
+      setPayload.projectIds = dto.projectIds.map((pid) => new Types.ObjectId(pid));
     }
-    if (dto.priority !== undefined) updatePayload.priority = dto.priority;
-    if (dto.taskComplete !== undefined) updatePayload.taskComplete = dto.taskComplete;
+    if (dto.priority !== undefined) setPayload.priority = dto.priority;
+    if (dto.taskComplete !== undefined) setPayload.taskComplete = dto.taskComplete;
+
+    const update: { $set?: Record<string, unknown>; $unset?: Record<string, 1> } = {};
+    if (Object.keys(setPayload).length > 0) update.$set = setPayload;
+    if (Object.keys(unsetPayload).length > 0) update.$unset = unsetPayload;
 
     const updated = await this.cardModel.findOneAndUpdate(
       { _id: new Types.ObjectId(id), isDeleted: false },
-      { $set: updatePayload },
+      update,
       { new: true },
     ).exec();
 

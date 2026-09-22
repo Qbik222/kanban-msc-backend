@@ -37,13 +37,15 @@ export class UpdateCardDto {
 
   @ApiPropertyOptional({
     type: () => DeadlineDto,
+    nullable: true,
+    description: 'Deadline range. Pass null to clear the saved deadline. Omit the field to leave it unchanged.',
     example: { startDate: '2026-03-19T09:00:00.000Z', endDate: '2026-03-20T09:00:00.000Z' },
   })
   @IsOptional()
   @ValidateNested()
   @Type(() => DeadlineDto)
   @Validate(DeadlineRangeValidator)
-  deadline?: DeadlineDto;
+  deadline?: DeadlineDto | null;
 
   @ApiPropertyOptional({
     example: ['65f0b3c3f2b7f6a1e9b1a001', '65f0b3c3f2b7f6a1e9b1a002'],
